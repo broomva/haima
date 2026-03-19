@@ -1,10 +1,10 @@
 //! API route handlers.
 
+use axum::Router;
 use axum::extract::State;
 use axum::response::Json;
 use axum::routing::get;
-use axum::Router;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 use crate::AppState;
 

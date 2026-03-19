@@ -43,9 +43,9 @@ pub struct PaymentPolicy {
 impl Default for PaymentPolicy {
     fn default() -> Self {
         Self {
-            auto_approve_cap: 100,             // $0.0001
-            hard_cap_per_tx: 1_000_000,        // $1.00
-            session_spend_cap: 10_000_000,     // $10.00
+            auto_approve_cap: 100,         // $0.0001
+            hard_cap_per_tx: 1_000_000,    // $1.00
+            session_spend_cap: 10_000_000, // $10.00
             max_tx_per_minute: 10,
             enabled: true,
             allow_in_hibernate: false,
@@ -79,7 +79,7 @@ impl PaymentPolicy {
 pub enum PolicyVerdict {
     /// Payment is small enough to auto-approve.
     AutoApproved,
-    /// Payment needs human confirmation via ApprovalPort.
+    /// Payment needs human confirmation via `ApprovalPort`.
     RequiresApproval,
     /// Payment is denied by policy.
     Denied(String),

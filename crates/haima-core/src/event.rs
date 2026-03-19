@@ -79,7 +79,7 @@ pub enum FinanceEventKind {
 }
 
 impl FinanceEventKind {
-    /// The `EventKind::Custom` event_type prefix for all Haima events.
+    /// The `EventKind::Custom` `event_type` prefix for all Haima events.
     pub const NAMESPACE: &'static str = "finance";
 
     /// Get the full event type string for Lago `Custom` events.

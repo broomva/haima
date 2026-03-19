@@ -1,7 +1,7 @@
 //! Finance event publisher — writes Haima events to the Lago journal.
 
-use haima_core::event::FinanceEventKind;
 use haima_core::HaimaResult;
+use haima_core::event::FinanceEventKind;
 use tracing::info;
 
 /// Publishes finance events to the Lago event journal.

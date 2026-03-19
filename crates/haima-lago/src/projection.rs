@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// This is a projection — it is recomputed by folding over events on startup
 /// and kept in sync via the event subscriber.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FinancialState {
     /// Total payments made (outgoing) in micro-credits.
     pub total_expenses: i64,
@@ -29,7 +29,7 @@ pub struct FinancialState {
     pub session_spend: i64,
     /// Timestamp of the last financial event.
     pub last_event_at: Option<DateTime<Utc>>,
-    /// The wallet address (set on WalletCreated).
+    /// The wallet address (set on `WalletCreated`).
     pub wallet_address: Option<String>,
     /// Last known on-chain balance (micro-credits).
     pub on_chain_balance: Option<i64>,
@@ -44,24 +44,6 @@ pub struct PendingBill {
     pub description: String,
     pub price_micro_credits: i64,
     pub billed_at: DateTime<Utc>,
-}
-
-impl Default for FinancialState {
-    fn default() -> Self {
-        Self {
-            total_expenses: 0,
-            total_revenue: 0,
-            net_balance: 0,
-            payment_count: 0,
-            revenue_count: 0,
-            failed_count: 0,
-            session_spend: 0,
-            last_event_at: None,
-            wallet_address: None,
-            on_chain_balance: None,
-            pending_bills: Vec::new(),
-        }
-    }
 }
 
 impl FinancialState {

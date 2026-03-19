@@ -35,7 +35,7 @@ pub enum PaymentDecision {
         /// Reason for approval.
         reason: String,
     },
-    /// Payment requires human approval via the ApprovalPort.
+    /// Payment requires human approval via the `ApprovalPort`.
     RequiresApproval {
         /// Amount in micro-credits.
         micro_credit_cost: i64,

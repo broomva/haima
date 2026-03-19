@@ -1,9 +1,9 @@
-//! Local signer — implements WalletBackend using a local secp256k1 private key.
+//! Local signer — implements `WalletBackend` using a local secp256k1 private key.
 
 use async_trait::async_trait;
-use haima_core::wallet::WalletAddress;
 use haima_core::HaimaResult;
-use k256::ecdsa::{signature::Signer, Signature, SigningKey};
+use haima_core::wallet::WalletAddress;
+use k256::ecdsa::{Signature, SigningKey, signature::Signer};
 use sha3::{Digest, Keccak256};
 use zeroize::Zeroizing;
 

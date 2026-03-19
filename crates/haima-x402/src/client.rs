@@ -1,9 +1,9 @@
 //! x402 client — intercepts 402 responses and handles payment flow.
 
+use haima_core::HaimaResult;
 use haima_core::payment::PaymentDecision;
 use haima_core::policy::{PaymentPolicy, PolicyVerdict};
 use haima_core::wallet::WalletAddress;
-use haima_core::HaimaResult;
 use haima_wallet::backend::WalletBackend;
 use std::sync::Arc;
 use tracing::warn;
@@ -83,8 +83,8 @@ impl X402Client {
 mod tests {
     use super::*;
     use crate::facilitator::FacilitatorConfig;
-    use haima_wallet::LocalSigner;
     use haima_core::wallet::ChainId;
+    use haima_wallet::LocalSigner;
 
     fn test_client() -> X402Client {
         let signer = LocalSigner::generate(ChainId::base()).unwrap();

@@ -1,7 +1,7 @@
 //! EVM wallet — secp256k1 keypair generation and Ethereum address derivation.
 
-use haima_core::wallet::{ChainId, WalletAddress};
 use haima_core::HaimaResult;
+use haima_core::wallet::{ChainId, WalletAddress};
 use k256::ecdsa::SigningKey;
 use sha3::{Digest, Keccak256};
 use zeroize::Zeroizing;
@@ -89,8 +89,7 @@ mod tests {
 
     #[test]
     fn derive_address_deterministic() {
-        let signing_key =
-            SigningKey::from_bytes(&[1u8; 32].into()).unwrap();
+        let signing_key = SigningKey::from_bytes(&[1u8; 32].into()).unwrap();
         let addr1 = derive_address(&signing_key);
         let addr2 = derive_address(&signing_key);
         assert_eq!(addr1, addr2);
@@ -102,10 +101,8 @@ mod tests {
         let private_key = b"test_private_key_32_bytes_long!!";
         let encryption_key = &[42u8; 32];
 
-        let (nonce, ciphertext) =
-            encrypt_private_key(private_key, encryption_key).unwrap();
-        let decrypted =
-            decrypt_private_key(&nonce, &ciphertext, encryption_key).unwrap();
+        let (nonce, ciphertext) = encrypt_private_key(private_key, encryption_key).unwrap();
+        let decrypted = decrypt_private_key(&nonce, &ciphertext, encryption_key).unwrap();
 
         assert_eq!(&*decrypted, private_key);
     }
@@ -116,8 +113,7 @@ mod tests {
         let encryption_key = &[42u8; 32];
         let wrong_key = &[0u8; 32];
 
-        let (nonce, ciphertext) =
-            encrypt_private_key(private_key, encryption_key).unwrap();
+        let (nonce, ciphertext) = encrypt_private_key(private_key, encryption_key).unwrap();
         let result = decrypt_private_key(&nonce, &ciphertext, wrong_key);
         assert!(result.is_err());
     }
