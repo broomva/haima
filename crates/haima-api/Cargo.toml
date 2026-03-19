@@ -1,0 +1,29 @@
+[package]
+name = "haima-api"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "HTTP API for Haima — wallet, balance, transactions, payment endpoints"
+
+[dependencies]
+haima-core.workspace = true
+haima-wallet.workspace = true
+haima-x402.workspace = true
+haima-lago.workspace = true
+aios-protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+axum.workspace = true
+tower-http.workspace = true
+
+[dev-dependencies]
+tower.workspace = true
+
+[lints]
+workspace = true

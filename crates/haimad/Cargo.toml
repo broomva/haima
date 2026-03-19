@@ -1,0 +1,30 @@
+[package]
+name = "haimad"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Haima daemon — agentic finance engine for the Agent OS"
+
+[dependencies]
+haima-core.workspace = true
+haima-wallet.workspace = true
+haima-x402.workspace = true
+haima-lago.workspace = true
+haima-api.workspace = true
+aios-protocol.workspace = true
+axum.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+vigil.workspace = true
+tokio.workspace = true
+clap.workspace = true
+toml.workspace = true
+anyhow.workspace = true
+
+[lints]
+workspace = true

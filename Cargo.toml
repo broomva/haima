@@ -1,0 +1,118 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/haima-core",
+    "crates/haima-wallet",
+    "crates/haima-x402",
+    "crates/haima-lago",
+    "crates/haima-api",
+    "crates/haimad",
+]
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# Restriction lints (cherry-picked, never enable the whole group)
+dbg_macro = "warn"
+print_stdout = "warn"
+print_stderr = "warn"
+todo = "warn"
+unimplemented = "warn"
+
+# Correctness & performance
+needless_pass_by_value = "warn"
+cloned_instead_of_copied = "warn"
+redundant_clone = "warn"
+redundant_closure_for_method_calls = "warn"
+unnested_or_patterns = "warn"
+trivially_copy_pass_by_ref = "warn"
+implicit_clone = "warn"
+manual_let_else = "warn"
+needless_collect = "warn"
+large_enum_variant = "warn"
+
+# Style
+doc_markdown = "warn"
+semicolon_if_nothing_returned = "warn"
+match_wildcard_for_single_variants = "warn"
+
+[profile.dev]
+opt-level = 0
+debug = true
+split-debuginfo = "unpacked"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+authors = ["Broomva Tech <contact@broomva.tech>"]
+repository = "https://github.com/broomva/haima"
+homepage = "https://github.com/broomva/haima"
+keywords = ["agent", "payments", "x402", "finance", "agentic"]
+categories = ["command-line-utilities", "development-tools"]
+
+[workspace.dependencies]
+# Core
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+chrono = { version = "0.4", features = ["serde"] }
+hex = "0.4"
+base64 = "0.22"
+url = { version = "2", features = ["serde"] }
+
+# Crypto (wallet & signing)
+k256 = { version = "0.13", features = ["ecdsa", "sha256"] }
+sha3 = "0.10"
+rand = "0.8"
+zeroize = { version = "1", features = ["derive"] }
+chacha20poly1305 = "0.10"
+
+# Async
+async-trait = "0.1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "sync"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+
+# HTTP
+axum = { version = "0.8", features = ["macros"] }
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+reqwest = { version = "0.12", features = ["json"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+toml = "0.9"
+anyhow = "1"
+
+# Testing
+tower = { version = "0.5", features = ["util"] }
+
+# Observability
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+vigil = { path = "../vigil" }
+
+# Agent OS protocol (canonical contract)
+aios-protocol = { version = "0.1.0", path = "../aiOS/crates/aios-protocol" }
+
+# Lago persistence layer
+lago-core = { version = "0.2.1", path = "../lago/crates/lago-core" }
+lago-journal = { version = "0.2.1", path = "../lago/crates/lago-journal" }
+
+# Autonomic (economic state)
+autonomic-core = { version = "0.1.0", path = "../autonomic/crates/autonomic-core" }
+
+# Internal crates
+haima-core = { version = "0.1.0", path = "crates/haima-core" }
+haima-wallet = { version = "0.1.0", path = "crates/haima-wallet" }
+haima-x402 = { version = "0.1.0", path = "crates/haima-x402" }
+haima-lago = { version = "0.1.0", path = "crates/haima-lago" }
+haima-api = { version = "0.1.0", path = "crates/haima-api" }
