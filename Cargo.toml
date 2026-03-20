@@ -106,6 +106,10 @@ aios-protocol = { version = "0.1.0", path = "../aiOS/crates/aios-protocol" }
 # Lago persistence layer
 lago-core = { version = "0.2.1", path = "../lago/crates/lago-core" }
 lago-journal = { version = "0.2.1", path = "../lago/crates/lago-journal" }
+lago-auth = { version = "0.2.1", path = "../lago/crates/lago-auth" }
+
+# Auth
+jsonwebtoken = "9"
 
 # Autonomic (economic state)
 autonomic-core = { version = "0.1.0", path = "../autonomic/crates/autonomic-core" }

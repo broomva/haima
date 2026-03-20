@@ -2,9 +2,13 @@
 //!
 //! Runs an HTTP server exposing the Haima API for wallet management,
 //! balance queries, transaction history, and payment operations.
+//!
+//! Auth is controlled via `HAIMA_JWT_SECRET` or `AUTH_SECRET` env var.
+//! If neither is set, the server starts without auth (local dev mode).
 
 use clap::Parser;
 use haima_api::AppState;
+use haima_api::auth::AuthConfig;
 use tracing::info;
 
 #[derive(Parser, Debug)]
@@ -40,7 +44,9 @@ async fn main() -> anyhow::Result<()> {
 
     info!(bind = %args.bind, "starting haimad");
 
-    let state = AppState::default();
+    // Initialize auth from environment
+    let auth_config = AuthConfig::from_env();
+    let state = AppState::new(auth_config);
     let app = haima_api::router(state);
 
     let listener = tokio::net::TcpListener::bind(&args.bind).await?;
