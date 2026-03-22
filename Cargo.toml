@@ -98,10 +98,10 @@ tower = { version = "0.5", features = ["util"] }
 # Observability
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-vigil = { path = "../vigil" }
+life-vigil = { version = "0.1.0", path = "../vigil" }
 
 # Agent OS protocol (canonical contract)
-aios-protocol = { version = "0.1.0", path = "../aiOS/crates/aios-protocol" }
+aios-protocol = { version = "0.2.0", path = "../aiOS/crates/aios-protocol" }
 
 # Lago persistence layer
 lago-core = { version = "0.2.1", path = "../lago/crates/lago-core" }
