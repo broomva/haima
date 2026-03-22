@@ -27,6 +27,7 @@ tower-http.workspace = true
 tower.workspace = true
 jsonwebtoken.workspace = true
 hex.workspace = true
+chrono.workspace = true
 
 [lints]
 workspace = true
