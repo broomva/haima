@@ -37,4 +37,4 @@ EXPOSE 3003
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:3003/health || exit 1
 
-CMD ["haimad", "--http-port", "3003"]
+CMD ["haimad", "--bind", "0.0.0.0:3003"]
