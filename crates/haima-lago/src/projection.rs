@@ -101,9 +101,11 @@ impl FinancialState {
                     billed_at: timestamp,
                 });
             }
-            // PaymentRequested and PaymentAuthorized are informational — no state change
+            // Informational events — no state change
             FinanceEventKind::PaymentRequested { .. }
-            | FinanceEventKind::PaymentAuthorized { .. } => {}
+            | FinanceEventKind::PaymentAuthorized { .. }
+            | FinanceEventKind::PaymentAttempted { .. }
+            | FinanceEventKind::CreditInsufficient { .. } => {}
         }
     }
 

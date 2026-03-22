@@ -76,6 +76,21 @@ pub enum FinanceEventKind {
         token: String,
         chain: String,
     },
+
+    /// Agent is attempting a payment through the facilitator.
+    PaymentAttempted {
+        resource_url: String,
+        amount_micro_credits: i64,
+        facilitator_url: String,
+    },
+
+    /// Agent's credit was insufficient for a payment.
+    CreditInsufficient {
+        agent_id: String,
+        resource_url: String,
+        amount_micro_credits: i64,
+        reason: String,
+    },
 }
 
 impl FinanceEventKind {
@@ -93,6 +108,8 @@ impl FinanceEventKind {
             Self::WalletCreated { .. } => "wallet_created",
             Self::BalanceSynced { .. } => "balance_synced",
             Self::TaskBilled { .. } => "task_billed",
+            Self::PaymentAttempted { .. } => "payment_attempted",
+            Self::CreditInsufficient { .. } => "credit_insufficient",
         };
         format!("{}.{variant}", Self::NAMESPACE)
     }
@@ -158,6 +175,17 @@ mod tests {
                 price_micro_credits: 500_000,
                 token: "USDC".into(),
                 chain: "eip155:8453".into(),
+            },
+            FinanceEventKind::PaymentAttempted {
+                resource_url: "https://example.com".into(),
+                amount_micro_credits: 100,
+                facilitator_url: "https://haimad-production.up.railway.app".into(),
+            },
+            FinanceEventKind::CreditInsufficient {
+                agent_id: "agent-1".into(),
+                resource_url: "https://example.com".into(),
+                amount_micro_credits: 100,
+                reason: "insufficient credit".into(),
             },
         ];
         for event in events {
