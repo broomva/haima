@@ -5,7 +5,8 @@ FROM rust:1-bookworm AS builder
 
 WORKDIR /build
 
-# Clone sibling dependencies
+# Clone sibling dependencies (ADD forces cache bust on new commits)
+ADD https://api.github.com/repos/broomva/lago/git/refs/heads/main /tmp/lago-ref
 RUN git clone --depth 1 https://github.com/broomva/aiOS.git ../aiOS && \
     git clone --depth 1 https://github.com/broomva/lago.git ../lago && \
     git clone --depth 1 https://github.com/broomva/vigil.git ../vigil
