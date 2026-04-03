@@ -29,6 +29,21 @@ use crate::verifier::{
 };
 
 // ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Parse a complexity string (from events) back to the enum.
+fn parse_complexity(s: &str) -> TaskComplexity {
+    match s {
+        "simple" => TaskComplexity::Simple,
+        "standard" => TaskComplexity::Standard,
+        "complex" => TaskComplexity::Complex,
+        "critical" => TaskComplexity::Critical,
+        _ => TaskComplexity::Standard,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Engine
 // ---------------------------------------------------------------------------
 
@@ -130,10 +145,7 @@ impl OutcomeEngine {
     }
 
     /// Register a custom task contract.
-    pub async fn register_contract(
-        &self,
-        contract: TaskContract,
-    ) -> Result<String, EngineError> {
+    pub async fn register_contract(&self, contract: TaskContract) -> Result<String, EngineError> {
         if contract.price_floor_micro_credits > contract.price_ceiling_micro_credits {
             return Err(EngineError::InvalidPriceRange {
                 floor: contract.price_floor_micro_credits,
@@ -185,6 +197,15 @@ impl OutcomeEngine {
         };
         state.apply(&event, Utc::now());
 
+        // Store agent_trust_score on the pending task (not part of the event).
+        if let Some(pending) = state
+            .pending_tasks
+            .iter_mut()
+            .find(|t| t.task_id == task_id)
+        {
+            pending.agent_trust_score = agent_trust_score;
+        }
+
         info!(
             task_id = %task_id,
             contract_id = %contract_id,
@@ -219,19 +240,16 @@ impl OutcomeEngine {
             .cloned()
             .ok_or_else(|| EngineError::ContractNotFound(contract_id.to_string()))?;
 
-        let pending = state
-            .pending_tasks
-            .iter()
-            .find(|t| t.task_id == task_id);
+        let pending = state.pending_tasks.iter().find(|t| t.task_id == task_id);
         let price = pending
             .map(|t| t.price_micro_credits)
             .unwrap_or(contract.price_floor_micro_credits);
-        let agent_id = pending
-            .map(|t| t.agent_id.clone())
-            .unwrap_or_default();
-        let accepted_at = pending
-            .map(|t| t.contracted_at)
-            .unwrap_or_else(Utc::now);
+        let agent_id = pending.map(|t| t.agent_id.clone()).unwrap_or_default();
+        let complexity = pending
+            .map(|t| parse_complexity(&t.complexity))
+            .unwrap_or(TaskComplexity::Standard);
+        let agent_trust_score = pending.map(|t| t.agent_trust_score).unwrap_or(0.0);
+        let accepted_at = pending.map(|t| t.contracted_at).unwrap_or_else(Utc::now);
 
         drop(state); // Release read lock before running verifiers.
 
@@ -302,14 +320,14 @@ impl OutcomeEngine {
             info!(task_id = %task_id, refund = refund_amount, "auto-refund triggered");
         }
 
-        // Record outcome.
+        // Record outcome with actual complexity and trust score from the pending task.
         let record = OutcomeRecord {
             task_id: task_id.to_string(),
             contract_id: contract_id.to_string(),
             task_type: contract.task_type,
-            complexity: TaskComplexity::Standard, // TODO: retrieve from pending
+            complexity,
             agent_id,
-            agent_trust_score: 0.0, // TODO: retrieve from pending
+            agent_trust_score,
             price_micro_credits: price,
             outcome,
             accepted_at,

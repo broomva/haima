@@ -155,10 +155,7 @@ pub fn spawn_sla_monitor(
 
             let expired = check_expired_tasks(&outcome_state).await;
             if !expired.is_empty() {
-                info!(
-                    count = expired.len(),
-                    "SLA monitor processed expired tasks"
-                );
+                info!(count = expired.len(), "SLA monitor processed expired tasks");
             }
         }
     })

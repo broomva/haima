@@ -9,17 +9,18 @@
 //! - `POST /v1/outcomes/:task_id/refund` — process refund for a failed task
 //! - `GET  /v1/outcomes/dashboard` — revenue dashboard
 //! - `GET  /v1/outcomes/pending` — list pending tasks with SLA status
+//! - `POST /v1/outcomes/check-sla` — trigger SLA check for expired tasks
+//! - `GET  /v1/outcomes/records` — list completed task outcome records
 
 use axum::Router;
 use axum::extract::{Path, State};
 use axum::response::Json;
 use axum::routing::{get, post};
 use chrono::Utc;
-use haima_core::event::FinanceEventKind;
 use haima_core::outcome::{
-    CriterionResult, OutcomeVerification, RefundPolicy, SuccessCriterion, TaskComplexity,
-    TaskContract, TaskOutcome, TaskType,
+    CriterionResult, RefundPolicy, SuccessCriterion, TaskComplexity, TaskContract, TaskType,
 };
+use haima_outcome::check_expired_tasks;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -30,28 +31,15 @@ pub fn outcome_routes(state: AppState) -> Router {
     Router::new()
         .route("/v1/outcomes/contracts", post(register_contract))
         .route("/v1/outcomes/contracts", get(list_contracts))
-        .route(
-            "/v1/outcomes/contracts/{contract_id}",
-            get(get_contract),
-        )
-        .route(
-            "/v1/outcomes/{task_id}/contract",
-            post(accept_task),
-        )
-        .route(
-            "/v1/outcomes/{task_id}/verify",
-            post(verify_task),
-        )
-        .route(
-            "/v1/outcomes/{task_id}/auto-verify",
-            post(auto_verify_task),
-        )
-        .route(
-            "/v1/outcomes/{task_id}/refund",
-            post(refund_task),
-        )
+        .route("/v1/outcomes/contracts/{contract_id}", get(get_contract))
+        .route("/v1/outcomes/{task_id}/contract", post(accept_task))
+        .route("/v1/outcomes/{task_id}/verify", post(verify_task))
+        .route("/v1/outcomes/{task_id}/auto-verify", post(auto_verify_task))
+        .route("/v1/outcomes/{task_id}/refund", post(refund_task))
         .route("/v1/outcomes/dashboard", get(dashboard))
-        .route("/v1/outcomes/pending", get(list_pending))
+        .route("/v1/outcomes/pending", get(pending_tasks))
+        .route("/v1/outcomes/check-sla", post(check_sla))
+        .route("/v1/outcomes/records", get(outcome_records))
         .with_state(state)
 }
 
@@ -157,7 +145,7 @@ struct CriterionResultInput {
 }
 
 #[derive(Debug, Deserialize)]
-struct AutoVerifyRequest {
+struct AutoVerifyTaskRequest {
     contract_id: String,
 }
 
@@ -216,14 +204,15 @@ async fn register_contract(
         created_at: Utc::now(),
     };
 
-    let mut outcome_state = state.outcome_state.write().await;
-    outcome_state.register_contract(contract.clone());
-
-    Json(json!({
-        "status": "registered",
-        "contract_id": contract_id,
-        "contract": serde_json::to_value(&contract).unwrap_or_default()
-    }))
+    let engine = state.outcome_engine.read().await;
+    match engine.register_contract(contract.clone()).await {
+        Ok(id) => Json(json!({
+            "status": "registered",
+            "contract_id": id,
+            "contract": serde_json::to_value(&contract).unwrap_or_default()
+        })),
+        Err(e) => Json(json!({"error": e.to_string()})),
+    }
 }
 
 /// `GET /v1/outcomes/contracts` — List all registered contracts.
@@ -250,96 +239,65 @@ async fn get_contract(
 
 /// `POST /v1/outcomes/:task_id/contract` — Accept a task under a contract.
 ///
-/// Resolves the price based on complexity + agent trust score, then records
-/// a `TaskContracted` event.
+/// Uses the outcome engine to resolve price, check trust, and start SLA clock.
 async fn accept_task(
     State(state): State<AppState>,
     Path(task_id): Path<String>,
     Json(req): Json<AcceptTaskRequest>,
 ) -> Json<Value> {
-    let mut outcome_state = state.outcome_state.write().await;
-
-    let contract = match outcome_state.contracts.get(&req.contract_id) {
-        Some(c) => c.clone(),
-        None => {
-            return Json(json!({"error": "contract not found"}));
-        }
-    };
-
-    // Check agent trust score meets minimum.
-    if req.agent_trust_score < contract.min_trust_score {
-        return Json(json!({
-            "error": "agent_trust_score below contract minimum",
-            "min_trust_score": contract.min_trust_score,
-            "agent_trust_score": req.agent_trust_score
-        }));
+    let engine = state.outcome_engine.read().await;
+    match engine
+        .accept_task(
+            task_id,
+            req.contract_id,
+            req.agent_id,
+            req.complexity,
+            req.agent_trust_score,
+        )
+        .await
+    {
+        Ok(result) => Json(json!({
+            "status": "contracted",
+            "task_id": result.task_id,
+            "contract_id": result.contract_id,
+            "agent_id": result.agent_id,
+            "complexity": req.complexity,
+            "price_micro_credits": result.price_micro_credits,
+            "sla_deadline_ms": result.sla_deadline_ms
+        })),
+        Err(e) => Json(json!({"error": e.to_string()})),
     }
-
-    let price = contract.resolve_price(req.complexity, req.agent_trust_score);
-    let sla_deadline_ms =
-        Utc::now().timestamp_millis() + (contract.refund_policy.sla_seconds as i64 * 1000);
-
-    let event = FinanceEventKind::TaskContracted {
-        task_id: task_id.clone(),
-        contract_id: req.contract_id.clone(),
-        agent_id: req.agent_id.clone(),
-        complexity: format!("{:?}", req.complexity).to_lowercase(),
-        price_micro_credits: price,
-        sla_deadline_ms,
-    };
-
-    outcome_state.apply(&event, Utc::now());
-
-    Json(json!({
-        "status": "contracted",
-        "task_id": task_id,
-        "contract_id": req.contract_id,
-        "agent_id": req.agent_id,
-        "complexity": req.complexity,
-        "price_micro_credits": price,
-        "sla_deadline_ms": sla_deadline_ms
-    }))
 }
 
-/// `POST /v1/outcomes/:task_id/verify` — Verify a task's outcome.
+/// `POST /v1/outcomes/:task_id/verify` — Verify a task's outcome manually.
 ///
-/// Checks all criteria results, derives outcome, triggers billing on success.
+/// Accepts externally-provided criterion results, derives outcome, triggers billing.
 async fn verify_task(
     State(state): State<AppState>,
     Path(task_id): Path<String>,
     Json(req): Json<VerifyTaskRequest>,
 ) -> Json<Value> {
-    let mut outcome_state = state.outcome_state.write().await;
-
+    // Build criterion results from the request, mapping to contract criteria.
+    let outcome_state = state.outcome_state.read().await;
     let contract = match outcome_state.contracts.get(&req.contract_id) {
         Some(c) => c.clone(),
-        None => {
-            return Json(json!({"error": "contract not found"}));
-        }
+        None => return Json(json!({"error": "contract not found"})),
     };
+    drop(outcome_state);
 
-    // Find the pending task to get its price.
-    let pending = outcome_state
-        .pending_tasks
-        .iter()
-        .find(|t| t.task_id == task_id);
-    let price = pending
-        .map(|t| t.price_micro_credits)
-        .unwrap_or(contract.price_floor_micro_credits);
-
-    // Build criterion results.
     let criterion_results: Vec<CriterionResult> = req
         .results
         .iter()
         .enumerate()
         .map(|(i, r)| {
-            let criterion = contract
-                .success_criteria
-                .get(i)
-                .cloned()
-                .unwrap_or(SuccessCriterion::Custom {
-                    description: format!("criterion-{i}"),
-                });
+            let criterion =
+                contract
+                    .success_criteria
+                    .get(i)
+                    .cloned()
+                    .unwrap_or(SuccessCriterion::Custom {
+                        description: format!("criterion-{i}"),
+                    });
             CriterionResult {
                 criterion,
                 passed: r.passed,
@@ -349,74 +307,11 @@ async fn verify_task(
         })
         .collect();
 
-    let outcome = OutcomeVerification::derive_outcome(&criterion_results);
-    let criteria_passed = criterion_results.iter().filter(|r| r.passed).count() as u32;
-    let criteria_total = criterion_results.len() as u32;
-
-    let outcome_str = match outcome {
-        TaskOutcome::Success => "success",
-        TaskOutcome::Failure => "failure",
-        TaskOutcome::PartialSuccess => "partial_success",
-        TaskOutcome::Timeout => "timeout",
-        TaskOutcome::Refunded => "refunded",
-    };
-
-    let event = FinanceEventKind::TaskVerified {
-        task_id: task_id.clone(),
-        contract_id: req.contract_id.clone(),
-        outcome: outcome_str.to_string(),
-        price_micro_credits: price,
-        criteria_passed,
-        criteria_total,
-    };
-
-    outcome_state.apply(&event, Utc::now());
-
-    // On success, also generate a TaskBilled event for the FinancialState projection.
-    let billing_triggered = outcome == TaskOutcome::Success || outcome == TaskOutcome::PartialSuccess;
-    if billing_triggered {
-        let bill_event = FinanceEventKind::TaskBilled {
-            task_id: task_id.clone(),
-            description: format!("outcome: {} ({})", contract.name, outcome_str),
-            price_micro_credits: price,
-            token: "USDC".into(),
-            chain: "eip155:8453".into(),
-        };
-        let mut fs = state.financial_state.write().await;
-        fs.apply(&bill_event, Utc::now());
-    }
-
-    let verification = OutcomeVerification {
-        task_id: task_id.clone(),
-        contract_id: req.contract_id,
-        results: criterion_results,
-        outcome,
-        price_micro_credits: price,
-        verified_at: Utc::now(),
-    };
-
-    Json(json!({
-        "status": "verified",
-        "verification": serde_json::to_value(&verification).unwrap_or_default(),
-        "billing_triggered": billing_triggered
-    }))
-}
-
-/// `POST /v1/outcomes/:task_id/auto-verify` — Run automated verifiers on a task.
-///
-/// Uses the `OutcomeEngine` to dispatch the appropriate verifier for each
-/// success criterion in the contract. Triggers billing on success, refund on failure.
-async fn auto_verify_task(
-    State(state): State<AppState>,
-    Path(task_id): Path<String>,
-    Json(req): Json<AutoVerifyRequest>,
-) -> Json<Value> {
-    let engine = haima_outcome::OutcomeEngine::new(
-        state.outcome_state.clone(),
-        state.financial_state.clone(),
-    );
-
-    match engine.verify_task(&task_id, &req.contract_id).await {
+    let engine = state.outcome_engine.read().await;
+    match engine
+        .verify_task_manual(&task_id, &req.contract_id, criterion_results)
+        .await
+    {
         Ok(result) => Json(json!({
             "status": "verified",
             "verification": serde_json::to_value(&result.verification).unwrap_or_default(),
@@ -424,14 +319,63 @@ async fn auto_verify_task(
             "refund_triggered": result.refund_triggered,
             "refund_amount": result.refund_amount
         })),
-        Err(e) => Json(json!({
-            "error": e.to_string()
-        })),
+        Err(e) => Json(json!({"error": e.to_string()})),
     }
 }
 
+/// `POST /v1/outcomes/:task_id/auto-verify` — Run automated verification.
+///
+/// Dispatches registered verifiers for each success criterion, derives outcome,
+/// and triggers billing or auto-refund based on the result.
+async fn auto_verify_task(
+    State(state): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(req): Json<AutoVerifyTaskRequest>,
+) -> Json<Value> {
+    let engine = state.outcome_engine.read().await;
+    match engine.verify_task(&task_id, &req.contract_id).await {
+        Ok(result) => Json(json!({
+            "status": "auto_verified",
+            "verification": serde_json::to_value(&result.verification).unwrap_or_default(),
+            "billing_triggered": result.billing_triggered,
+            "refund_triggered": result.refund_triggered,
+            "refund_amount": result.refund_amount
+        })),
+        Err(e) => Json(json!({"error": e.to_string()})),
+    }
+}
+
+/// `POST /v1/outcomes/:task_id/refund` — Process a refund for a failed task.
+async fn refund_task(
+    State(state): State<AppState>,
+    Path(task_id): Path<String>,
+    Json(req): Json<RefundTaskRequest>,
+) -> Json<Value> {
+    let engine = state.outcome_engine.read().await;
+    match engine
+        .refund_task(&task_id, &req.contract_id, &req.reason)
+        .await
+    {
+        Ok(refund_amount) => Json(json!({
+            "status": "refunded",
+            "task_id": task_id,
+            "contract_id": req.contract_id,
+            "refund_micro_credits": refund_amount,
+            "reason": req.reason
+        })),
+        Err(e) => Json(json!({"error": e.to_string()})),
+    }
+}
+
+/// `GET /v1/outcomes/dashboard` — Revenue dashboard with per-task-type economics.
+async fn dashboard(State(state): State<AppState>) -> Json<Value> {
+    let outcome_state = state.outcome_state.read().await;
+    let summary = outcome_state.dashboard();
+    Json(serde_json::to_value(&summary).unwrap_or_else(|_| json!({})))
+}
+
 /// `GET /v1/outcomes/pending` — List pending tasks with SLA status.
-async fn list_pending(State(state): State<AppState>) -> Json<Value> {
+async fn pending_tasks(State(state): State<AppState>) -> Json<Value> {
     let outcome_state = state.outcome_state.read().await;
     let now_ms = Utc::now().timestamp_millis();
 
@@ -439,16 +383,24 @@ async fn list_pending(State(state): State<AppState>) -> Json<Value> {
         .pending_tasks
         .iter()
         .map(|t| {
-            let remaining_ms = t.sla_deadline_ms - now_ms;
-            let sla_status = if remaining_ms > 0 { "active" } else { "expired" };
+            let time_remaining_ms = t.sla_deadline_ms - now_ms;
+            let grace_ms = outcome_state
+                .contracts
+                .get(&t.contract_id)
+                .map(|c| c.refund_policy.grace_period_seconds as i64 * 1000)
+                .unwrap_or(300_000);
+
             json!({
                 "task_id": t.task_id,
                 "contract_id": t.contract_id,
                 "agent_id": t.agent_id,
+                "complexity": t.complexity,
+                "agent_trust_score": t.agent_trust_score,
                 "price_micro_credits": t.price_micro_credits,
                 "sla_deadline_ms": t.sla_deadline_ms,
-                "remaining_ms": remaining_ms.max(0),
-                "sla_status": sla_status,
+                "time_remaining_ms": time_remaining_ms,
+                "sla_breached": time_remaining_ms < 0,
+                "grace_remaining_ms": time_remaining_ms + grace_ms,
                 "contracted_at": t.contracted_at.to_rfc3339()
             })
         })
@@ -460,55 +412,38 @@ async fn list_pending(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
-/// `POST /v1/outcomes/:task_id/refund` — Process a refund for a failed task.
-async fn refund_task(
-    State(state): State<AppState>,
-    Path(task_id): Path<String>,
-    Json(req): Json<RefundTaskRequest>,
-) -> Json<Value> {
-    let mut outcome_state = state.outcome_state.write().await;
-
-    let contract = match outcome_state.contracts.get(&req.contract_id) {
-        Some(c) => c.clone(),
-        None => {
-            return Json(json!({"error": "contract not found"}));
-        }
-    };
-
-    // Look up the price from pending tasks or stats.
-    let price = outcome_state
-        .pending_tasks
+/// `POST /v1/outcomes/check-sla` — Trigger an SLA check for expired tasks.
+///
+/// Manually triggers the same logic the background SLA monitor runs.
+/// Returns the list of tasks that were expired and auto-refunded.
+async fn check_sla(State(state): State<AppState>) -> Json<Value> {
+    let expired = check_expired_tasks(&state.outcome_state).await;
+    let expired_json: Vec<Value> = expired
         .iter()
-        .find(|t| t.task_id == task_id)
-        .map(|t| t.price_micro_credits)
-        .unwrap_or(contract.price_floor_micro_credits);
-
-    let refund_amount =
-        (price as f64 * contract.refund_policy.refund_percentage as f64 / 100.0) as i64;
-
-    let event = FinanceEventKind::TaskRefunded {
-        task_id: task_id.clone(),
-        contract_id: req.contract_id.clone(),
-        refund_micro_credits: refund_amount,
-        reason: req.reason.clone(),
-    };
-
-    outcome_state.apply(&event, Utc::now());
+        .map(|t| {
+            json!({
+                "task_id": t.task_id,
+                "contract_id": t.contract_id,
+                "refund_micro_credits": t.refund_micro_credits
+            })
+        })
+        .collect();
 
     Json(json!({
-        "status": "refunded",
-        "task_id": task_id,
-        "contract_id": req.contract_id,
-        "refund_micro_credits": refund_amount,
-        "reason": req.reason
+        "status": "sla_check_complete",
+        "expired_tasks": expired_json,
+        "count": expired.len()
     }))
 }
 
-/// `GET /v1/outcomes/dashboard` — Revenue dashboard with per-task-type economics.
-async fn dashboard(State(state): State<AppState>) -> Json<Value> {
-    let outcome_state = state.outcome_state.read().await;
-    let summary = outcome_state.dashboard();
-    Json(serde_json::to_value(&summary).unwrap_or_else(|_| json!({})))
+/// `GET /v1/outcomes/records` — List completed task outcome records.
+async fn outcome_records(State(state): State<AppState>) -> Json<Value> {
+    let engine = state.outcome_engine.read().await;
+    let records = engine.outcome_records().await;
+    Json(json!({
+        "records": serde_json::to_value(&records).unwrap_or_default(),
+        "count": records.len()
+    }))
 }
 
 // ---------------------------------------------------------------------------
@@ -544,6 +479,40 @@ mod tests {
         let app = test_app();
         let req = Request::builder()
             .uri("/v1/outcomes/contracts")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn pending_tasks_empty() {
+        let app = test_app();
+        let req = Request::builder()
+            .uri("/v1/outcomes/pending")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn check_sla_empty() {
+        let app = test_app();
+        let req = Request::builder()
+            .method("POST")
+            .uri("/v1/outcomes/check-sla")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn outcome_records_empty() {
+        let app = test_app();
+        let req = Request::builder()
+            .uri("/v1/outcomes/records")
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();

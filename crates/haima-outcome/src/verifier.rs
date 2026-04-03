@@ -25,11 +25,7 @@ pub trait SuccessVerifier: Send + Sync {
     /// Check whether the criterion is satisfied for the given task.
     ///
     /// Returns a [`CriterionResult`] with `passed` = true/false and optional details.
-    async fn verify(
-        &self,
-        task_id: &str,
-        criterion: &SuccessCriterion,
-    ) -> CriterionResult;
+    async fn verify(&self, task_id: &str, criterion: &SuccessCriterion) -> CriterionResult;
 }
 
 // ---------------------------------------------------------------------------
@@ -77,11 +73,7 @@ impl SuccessVerifier for TestsPassedVerifier {
         "tests_passed"
     }
 
-    async fn verify(
-        &self,
-        task_id: &str,
-        criterion: &SuccessCriterion,
-    ) -> CriterionResult {
+    async fn verify(&self, task_id: &str, criterion: &SuccessCriterion) -> CriterionResult {
         let scope = match criterion {
             SuccessCriterion::TestsPassed { scope } => scope.clone(),
             _ => "unknown".to_string(),
@@ -176,11 +168,7 @@ impl SuccessVerifier for DataValidatedVerifier {
         "data_validated"
     }
 
-    async fn verify(
-        &self,
-        task_id: &str,
-        criterion: &SuccessCriterion,
-    ) -> CriterionResult {
+    async fn verify(&self, task_id: &str, criterion: &SuccessCriterion) -> CriterionResult {
         let rule_id = match criterion {
             SuccessCriterion::DataValidated { rule_id } => rule_id.clone(),
             _ => "unknown".to_string(),
@@ -193,26 +181,27 @@ impl SuccessVerifier for DataValidatedVerifier {
         };
 
         match self.client.post(&url).json(&body).send().await {
-            Ok(resp) if resp.status().is_success() => {
-                match resp.json::<ValidateResponse>().await {
-                    Ok(body) => CriterionResult {
-                        criterion: criterion.clone(),
-                        passed: body.valid,
-                        details: body.details,
-                        checked_at: Utc::now(),
-                    },
-                    Err(e) => CriterionResult {
-                        criterion: criterion.clone(),
-                        passed: false,
-                        details: Some(format!("failed to parse validation response: {e}")),
-                        checked_at: Utc::now(),
-                    },
-                }
-            }
+            Ok(resp) if resp.status().is_success() => match resp.json::<ValidateResponse>().await {
+                Ok(body) => CriterionResult {
+                    criterion: criterion.clone(),
+                    passed: body.valid,
+                    details: body.details,
+                    checked_at: Utc::now(),
+                },
+                Err(e) => CriterionResult {
+                    criterion: criterion.clone(),
+                    passed: false,
+                    details: Some(format!("failed to parse validation response: {e}")),
+                    checked_at: Utc::now(),
+                },
+            },
             Ok(resp) => CriterionResult {
                 criterion: criterion.clone(),
                 passed: false,
-                details: Some(format!("validation endpoint returned status {}", resp.status())),
+                details: Some(format!(
+                    "validation endpoint returned status {}",
+                    resp.status()
+                )),
                 checked_at: Utc::now(),
             },
             Err(e) => CriterionResult {
@@ -272,11 +261,7 @@ impl SuccessVerifier for WebhookConfirmedVerifier {
         "webhook_confirmed"
     }
 
-    async fn verify(
-        &self,
-        task_id: &str,
-        criterion: &SuccessCriterion,
-    ) -> CriterionResult {
+    async fn verify(&self, task_id: &str, criterion: &SuccessCriterion) -> CriterionResult {
         let url = match criterion {
             SuccessCriterion::WebhookConfirmed { url } => url.clone(),
             _ => {
@@ -335,11 +320,7 @@ impl SuccessVerifier for ManualApprovalVerifier {
         "manual_approval"
     }
 
-    async fn verify(
-        &self,
-        _task_id: &str,
-        criterion: &SuccessCriterion,
-    ) -> CriterionResult {
+    async fn verify(&self, _task_id: &str, criterion: &SuccessCriterion) -> CriterionResult {
         CriterionResult {
             criterion: criterion.clone(),
             passed: false,

@@ -44,9 +44,7 @@ pub fn create_default_pool(pool_id: &str, initial_reserves: i64) -> InsurancePoo
 /// Returns the updated pool state.
 pub fn contribute_to_pool(pool: &mut InsurancePool, amount_micro_usd: i64) -> HaimaResult<()> {
     if amount_micro_usd <= 0 {
-        return Err(HaimaError::Protocol(
-            "contribution must be positive".into(),
-        ));
+        return Err(HaimaError::Protocol("contribution must be positive".into()));
     }
 
     pool.reserves_micro_usd += amount_micro_usd;
@@ -64,10 +62,7 @@ pub fn contribute_to_pool(pool: &mut InsurancePool, amount_micro_usd: i64) -> Ha
 /// Process a payout from the pool for a verified claim.
 ///
 /// Returns the actual payout amount (may be less than requested if pool is low).
-pub fn process_pool_payout(
-    pool: &mut InsurancePool,
-    payout_micro_usd: i64,
-) -> HaimaResult<i64> {
+pub fn process_pool_payout(pool: &mut InsurancePool, payout_micro_usd: i64) -> HaimaResult<i64> {
     if payout_micro_usd <= 0 {
         return Err(HaimaError::Protocol("payout must be positive".into()));
     }

@@ -63,6 +63,8 @@ pub struct PendingTask {
     pub task_id: String,
     pub contract_id: String,
     pub agent_id: String,
+    pub complexity: String,
+    pub agent_trust_score: f64,
     pub price_micro_credits: i64,
     pub sla_deadline_ms: i64,
     pub contracted_at: DateTime<Utc>,
@@ -105,9 +107,9 @@ impl OutcomePricingState {
                 task_id,
                 contract_id,
                 agent_id,
+                complexity,
                 price_micro_credits,
                 sla_deadline_ms,
-                ..
             } => {
                 self.last_event_at = Some(timestamp);
                 self.total_tasks_contracted += 1;
@@ -115,6 +117,8 @@ impl OutcomePricingState {
                     task_id: task_id.clone(),
                     contract_id: contract_id.clone(),
                     agent_id: agent_id.clone(),
+                    complexity: complexity.clone(),
+                    agent_trust_score: 0.0, // Trust score stored at accept time via engine
                     price_micro_credits: *price_micro_credits,
                     sla_deadline_ms: *sla_deadline_ms,
                     contracted_at: timestamp,
@@ -141,10 +145,7 @@ impl OutcomePricingState {
                     .map(|c| c.task_type.to_string())
                     .unwrap_or_else(|| "unknown".to_string());
 
-                let stats = self
-                    .stats_by_type
-                    .entry(task_type_key)
-                    .or_default();
+                let stats = self.stats_by_type.entry(task_type_key).or_default();
                 stats.total_tasks += 1;
 
                 let parsed_outcome = match outcome.as_str() {
@@ -200,10 +201,7 @@ impl OutcomePricingState {
                     .map(|c| c.task_type.to_string())
                     .unwrap_or_else(|| "unknown".to_string());
 
-                let stats = self
-                    .stats_by_type
-                    .entry(task_type_key)
-                    .or_default();
+                let stats = self.stats_by_type.entry(task_type_key).or_default();
                 stats.total_refunds_micro_credits += refund_micro_credits;
                 stats.recompute();
             }

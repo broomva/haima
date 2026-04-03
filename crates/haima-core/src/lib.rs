@@ -31,10 +31,15 @@ pub use credit::{
 pub use error::{HaimaError, HaimaResult};
 pub use event::FinanceEventKind;
 pub use insurance::{
-    BindRequest, ClaimRequest, ClaimStatus, ClaimVerification, InsuranceClaim, InsurancePool,
-    InsurancePolicy, InsuranceProduct, InsuranceProductType, InsuranceProvider, InsuranceQuote,
+    BindRequest, ClaimRequest, ClaimStatus, ClaimVerification, InsuranceClaim, InsurancePolicy,
+    InsurancePool, InsuranceProduct, InsuranceProductType, InsuranceProvider, InsuranceQuote,
     InsuranceTrustTier, PolicyStatus, PoolContributionRequest, PoolStatus, ProviderType,
     QuoteRequest, RiskAssessment, RiskComponents,
+};
+pub use lending::{
+    CreditLine, CreditLineStatus, DrawRequest, DrawResult, RepaymentRecord, accrue_interest,
+    close_credit_line, default_credit_line, draw, freeze_credit_line, open_credit_line, repay,
+    unfreeze_credit_line,
 };
 pub use marketplace::{
     ClaimsHistory, InsuranceDashboard, assess_risk, bind_policy, calculate_premium,
@@ -46,11 +51,6 @@ pub use outcome::{
     TaskComplexity, TaskContract, TaskOutcome, TaskType, default_code_review_contract,
     default_data_pipeline_contract, default_document_generation_contract,
     default_support_ticket_contract,
-};
-pub use lending::{
-    CreditLine, CreditLineStatus, DrawRequest, DrawResult, RepaymentRecord, accrue_interest,
-    close_credit_line, default_credit_line, draw, freeze_credit_line, open_credit_line, repay,
-    unfreeze_credit_line,
 };
 pub use payment::{PaymentDecision, PaymentRequest};
 pub use policy::PaymentPolicy;

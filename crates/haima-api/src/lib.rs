@@ -59,10 +59,7 @@ impl AppState {
     pub fn new(auth_config: AuthConfig) -> Self {
         let outcome_state = Arc::new(RwLock::new(OutcomePricingState::default()));
         let financial_state = Arc::new(RwLock::new(FinancialState::default()));
-        let engine = OutcomeEngine::new(
-            Arc::clone(&outcome_state),
-            Arc::clone(&financial_state),
-        );
+        let engine = OutcomeEngine::new(Arc::clone(&outcome_state), Arc::clone(&financial_state));
 
         Self {
             financial_state,
@@ -80,16 +77,38 @@ impl AppState {
     }
 
     /// Create a new `AppState` with the insurance marketplace bootstrapped
-    /// (default pool, products, and provider).
+    /// (default pool with seed reserves, products, self-insurance provider,
+    /// and a licensed MGA provider stub).
     pub fn with_insurance(auth_config: AuthConfig) -> Self {
         let pool_id = "life-network-pool";
-        let pool = haima_core::marketplace::create_pool(
+        let mut pool = haima_core::marketplace::create_pool(
             pool_id,
             "Life Network Self-Insurance Pool",
             250, // 2.5% management fee
         );
+        // Seed the pool with initial reserves ($100 = 100M micro-USD).
+        // In production this would come from network funding events.
+        haima_core::marketplace::contribute_to_pool(&mut pool, 100_000_000);
+
         let products = haima_core::marketplace::default_products(pool_id);
-        let provider = haima_core::marketplace::default_pool_provider(pool_id);
+        let pool_provider = haima_core::marketplace::default_pool_provider(pool_id);
+
+        // Register a licensed MGA (Managing General Agent) provider stub.
+        // This represents a partnership with a licensed insurer for higher-tier
+        // coverage that exceeds the self-insurance pool's capacity.
+        let mga_provider = haima_core::insurance::InsuranceProvider {
+            provider_id: "mga-aegis-underwriters".to_string(),
+            name: "Aegis AI Underwriters MGA".to_string(),
+            provider_type: haima_core::insurance::ProviderType::LicensedInsurer,
+            offered_products: vec![
+                haima_core::insurance::InsuranceProductType::FinancialError,
+                haima_core::insurance::InsuranceProductType::DataBreach,
+            ],
+            commission_rate_bps: 2000, // 20% facilitation commission
+            active: true,
+            api_endpoint: Some("https://api.aegis-underwriters.example/v1".to_string()),
+            registered_at: chrono::Utc::now(),
+        };
 
         let mut insurance = InsuranceState::default();
         insurance.pool = Some(pool);
@@ -98,14 +117,14 @@ impl AppState {
         }
         insurance
             .providers
-            .insert(provider.provider_id.clone(), provider);
+            .insert(pool_provider.provider_id.clone(), pool_provider);
+        insurance
+            .providers
+            .insert(mga_provider.provider_id.clone(), mga_provider);
 
         let outcome_state = Arc::new(RwLock::new(OutcomePricingState::default()));
         let financial_state = Arc::new(RwLock::new(FinancialState::default()));
-        let engine = OutcomeEngine::new(
-            Arc::clone(&outcome_state),
-            Arc::clone(&financial_state),
-        );
+        let engine = OutcomeEngine::new(Arc::clone(&outcome_state), Arc::clone(&financial_state));
 
         Self {
             financial_state,
@@ -127,10 +146,7 @@ impl Default for AppState {
     fn default() -> Self {
         let outcome_state = Arc::new(RwLock::new(OutcomePricingState::default()));
         let financial_state = Arc::new(RwLock::new(FinancialState::default()));
-        let engine = OutcomeEngine::new(
-            Arc::clone(&outcome_state),
-            Arc::clone(&financial_state),
-        );
+        let engine = OutcomeEngine::new(Arc::clone(&outcome_state), Arc::clone(&financial_state));
 
         Self {
             financial_state,

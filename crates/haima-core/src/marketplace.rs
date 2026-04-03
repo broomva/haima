@@ -11,10 +11,9 @@ use serde::{Deserialize, Serialize};
 use crate::bureau::{RiskRating, TrustContext, TrustTrajectory};
 use crate::credit::{CreditScore, CreditTier};
 use crate::insurance::{
-    BindRequest, ClaimRequest, ClaimStatus, ClaimVerification, InsuranceClaim, InsurancePool,
-    InsurancePolicy, InsuranceProduct, InsuranceProductType, InsuranceProvider, InsuranceQuote,
-    InsuranceTrustTier, PolicyStatus, PoolContributionRequest, PoolStatus, ProviderType,
-    QuoteRequest, RiskAssessment, RiskComponents,
+    ClaimRequest, ClaimStatus, ClaimVerification, InsuranceClaim, InsurancePolicy, InsurancePool,
+    InsuranceProduct, InsuranceProductType, InsuranceProvider, InsuranceQuote, InsuranceTrustTier,
+    PolicyStatus, PoolStatus, ProviderType, QuoteRequest, RiskAssessment, RiskComponents,
 };
 
 // ---------------------------------------------------------------------------
@@ -44,12 +43,8 @@ pub fn assess_risk(
     // Derive component scores from trust (behavioral) and credit (financial) data.
     // Trust provides a single composite score; we split it into pillars via heuristics.
     let trust_based = trust_score;
-    let payment_based = credit
-        .map(|c| c.factors.payment_history)
-        .unwrap_or(0.5);
-    let econ_based = credit
-        .map(|c| c.factors.economic_stability)
-        .unwrap_or(0.5);
+    let payment_based = credit.map(|c| c.factors.payment_history).unwrap_or(0.5);
+    let econ_based = credit.map(|c| c.factors.economic_stability).unwrap_or(0.5);
 
     let components = RiskComponents {
         operational_reliability: trust_based.max(0.0).min(1.0),
@@ -99,7 +94,10 @@ pub fn assess_risk(
         if degrading {
             Some("trust trajectory is degrading — reassess after stabilization".into())
         } else {
-            Some("risk rating is critical — agent does not meet minimum insurability threshold".into())
+            Some(
+                "risk rating is critical — agent does not meet minimum insurability threshold"
+                    .into(),
+            )
         }
     } else {
         None
@@ -263,10 +261,7 @@ pub fn bind_policy(quote: &InsuranceQuote) -> Option<InsurancePolicy> {
 ///
 /// Returns `None` if the policy is not active or the incident type doesn't
 /// match the policy coverage.
-pub fn create_claim(
-    request: &ClaimRequest,
-    policy: &InsurancePolicy,
-) -> Option<InsuranceClaim> {
+pub fn create_claim(request: &ClaimRequest, policy: &InsurancePolicy) -> Option<InsuranceClaim> {
     // Policy must be active.
     if policy.status != PolicyStatus::Active {
         return None;
@@ -360,7 +355,8 @@ pub fn verify_claim(
         claim.status = ClaimStatus::Approved;
     } else if confidence < 0.3 {
         claim.status = ClaimStatus::Denied;
-        claim.resolution_notes = Some("automated verification failed — insufficient evidence".into());
+        claim.resolution_notes =
+            Some("automated verification failed — insufficient evidence".into());
     } else {
         claim.status = ClaimStatus::UnderReview;
         claim.resolution_notes =
@@ -481,12 +477,14 @@ pub fn default_products(pool_id: &str) -> Vec<InsuranceProduct> {
             product_id: "prod-task-failure".into(),
             product_type: InsuranceProductType::TaskFailure,
             name: "Task Failure Coverage".into(),
-            description: "Covers customer losses when an agent task fails to produce the contracted outcome.".into(),
-            base_rate_bps: 250, // 2.5% annual
-            min_coverage_micro_usd: 100_000,    // $0.10
-            max_coverage_micro_usd: 100_000_000, // $100
+            description:
+                "Covers customer losses when an agent task fails to produce the contracted outcome."
+                    .into(),
+            base_rate_bps: 250,                   // 2.5% annual
+            min_coverage_micro_usd: 100_000,      // $0.10
+            max_coverage_micro_usd: 100_000_000,  // $100
             default_deductible_micro_usd: 50_000, // $0.05
-            period_secs: 30 * 24 * 3600,         // 30 days
+            period_secs: 30 * 24 * 3600,          // 30 days
             min_trust_tier: InsuranceTrustTier::Provisional,
             provider_id: pool_id.into(),
             active: true,
@@ -495,10 +493,11 @@ pub fn default_products(pool_id: &str) -> Vec<InsuranceProduct> {
             product_id: "prod-financial-error".into(),
             product_type: InsuranceProductType::FinancialError,
             name: "Financial Error Coverage".into(),
-            description: "Covers erroneous payments or transaction errors caused by the agent.".into(),
+            description: "Covers erroneous payments or transaction errors caused by the agent."
+                .into(),
             base_rate_bps: 400, // 4.0% annual
             min_coverage_micro_usd: 100_000,
-            max_coverage_micro_usd: 50_000_000, // $50
+            max_coverage_micro_usd: 50_000_000,    // $50
             default_deductible_micro_usd: 100_000, // $0.10
             period_secs: 30 * 24 * 3600,
             min_trust_tier: InsuranceTrustTier::Trusted,
@@ -510,11 +509,11 @@ pub fn default_products(pool_id: &str) -> Vec<InsuranceProduct> {
             product_type: InsuranceProductType::DataBreach,
             name: "Data Breach Coverage".into(),
             description: "Covers liability from agent-caused data exposure incidents.".into(),
-            base_rate_bps: 500, // 5.0% annual
-            min_coverage_micro_usd: 1_000_000,   // $1
-            max_coverage_micro_usd: 500_000_000,  // $500
+            base_rate_bps: 500,                    // 5.0% annual
+            min_coverage_micro_usd: 1_000_000,     // $1
+            max_coverage_micro_usd: 500_000_000,   // $500
             default_deductible_micro_usd: 500_000, // $0.50
-            period_secs: 90 * 24 * 3600,          // 90 days
+            period_secs: 90 * 24 * 3600,           // 90 days
             min_trust_tier: InsuranceTrustTier::Trusted,
             provider_id: pool_id.into(),
             active: true,
@@ -523,7 +522,8 @@ pub fn default_products(pool_id: &str) -> Vec<InsuranceProduct> {
             product_id: "prod-sla-penalty".into(),
             product_type: InsuranceProductType::SlaPenalty,
             name: "SLA Penalty Coverage".into(),
-            description: "Covers SLA breach penalties when an agent misses contracted deadlines.".into(),
+            description: "Covers SLA breach penalties when an agent misses contracted deadlines."
+                .into(),
             base_rate_bps: 300, // 3.0% annual
             min_coverage_micro_usd: 100_000,
             max_coverage_micro_usd: 200_000_000, // $200
@@ -655,7 +655,12 @@ mod tests {
         let product = &default_products("pool-1")[0]; // task failure, 250 bps
         let trust = test_trust_context(0.85, TrustTrajectory::Stable);
         let credit = test_credit_score(0.80, CreditTier::Standard);
-        let assessment = assess_risk("agent-1", Some(&trust), Some(&credit), &ClaimsHistory::default());
+        let assessment = assess_risk(
+            "agent-1",
+            Some(&trust),
+            Some(&credit),
+            &ClaimsHistory::default(),
+        );
 
         let premium = calculate_premium(product, 10_000_000, &assessment); // $10 coverage
         assert!(premium > 0);
@@ -669,7 +674,12 @@ mod tests {
         let product = &products[0]; // task failure
         let trust = test_trust_context(0.85, TrustTrajectory::Stable);
         let credit = test_credit_score(0.80, CreditTier::Standard);
-        let assessment = assess_risk("agent-1", Some(&trust), Some(&credit), &ClaimsHistory::default());
+        let assessment = assess_risk(
+            "agent-1",
+            Some(&trust),
+            Some(&credit),
+            &ClaimsHistory::default(),
+        );
 
         let request = QuoteRequest {
             agent_id: "agent-1".into(),
@@ -699,7 +709,12 @@ mod tests {
         let product = &products[0];
         let trust = test_trust_context(0.85, TrustTrajectory::Stable);
         let credit = test_credit_score(0.80, CreditTier::Standard);
-        let assessment = assess_risk("agent-1", Some(&trust), Some(&credit), &ClaimsHistory::default());
+        let assessment = assess_risk(
+            "agent-1",
+            Some(&trust),
+            Some(&credit),
+            &ClaimsHistory::default(),
+        );
 
         let request = QuoteRequest {
             agent_id: "agent-1".into(),
@@ -738,7 +753,12 @@ mod tests {
         let product = &products[0];
         let trust = test_trust_context(0.85, TrustTrajectory::Stable);
         let credit = test_credit_score(0.80, CreditTier::Standard);
-        let assessment = assess_risk("agent-1", Some(&trust), Some(&credit), &ClaimsHistory::default());
+        let assessment = assess_risk(
+            "agent-1",
+            Some(&trust),
+            Some(&credit),
+            &ClaimsHistory::default(),
+        );
 
         let request = QuoteRequest {
             agent_id: "agent-1".into(),

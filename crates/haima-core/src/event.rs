@@ -93,7 +93,6 @@ pub enum FinanceEventKind {
     },
 
     // -- Outcome-based pricing events --
-
     /// A task contract was accepted — agent committed to deliver an outcome.
     TaskContracted {
         task_id: String,
@@ -123,7 +122,6 @@ pub enum FinanceEventKind {
     },
 
     // -- Insurance events --
-
     /// Insurance policy issued to an agent.
     PolicyIssued {
         policy_id: String,

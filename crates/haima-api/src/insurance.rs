@@ -19,9 +19,7 @@ use axum::response::Json;
 use axum::routing::{get, post};
 use chrono::Utc;
 use haima_core::event::FinanceEventKind;
-use haima_core::insurance::{
-    BindRequest, ClaimRequest, PoolContributionRequest, QuoteRequest,
-};
+use haima_core::insurance::{BindRequest, ClaimRequest, PoolContributionRequest, QuoteRequest};
 use haima_core::marketplace;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -36,22 +34,13 @@ pub fn insurance_routes(state: AppState) -> Router {
         .route("/v1/insurance/policies", post(bind_quote))
         .route("/v1/insurance/policies", get(list_policies))
         .route("/v1/insurance/claims", post(submit_claim))
-        .route(
-            "/v1/insurance/claims/{claim_id}",
-            get(get_claim),
-        )
+        .route("/v1/insurance/claims/{claim_id}", get(get_claim))
         .route(
             "/v1/insurance/claims/{claim_id}/verify",
             post(verify_claim_endpoint),
         )
-        .route(
-            "/v1/insurance/risk/{agent_id}",
-            get(risk_assessment),
-        )
-        .route(
-            "/v1/insurance/pool/contribute",
-            post(pool_contribute),
-        )
+        .route("/v1/insurance/risk/{agent_id}", get(risk_assessment))
+        .route("/v1/insurance/pool/contribute", post(pool_contribute))
         .route("/v1/insurance/pool", get(pool_status))
         .route("/v1/insurance/providers", get(list_providers))
         .route("/v1/insurance/dashboard", get(dashboard))
@@ -142,12 +131,7 @@ async fn get_quote(
     let credit = credit_scores.get(&request.agent_id);
 
     // Assess risk.
-    let assessment = marketplace::assess_risk(
-        &request.agent_id,
-        trust,
-        credit,
-        &claims_history,
-    );
+    let assessment = marketplace::assess_risk(&request.agent_id, trust, credit, &claims_history);
 
     drop(trust_contexts);
     drop(credit_scores);
@@ -198,7 +182,17 @@ async fn bind_quote(
 
     match marketplace::bind_policy(&quote) {
         Some(policy) => {
-            let commission = (quote.premium_micro_usd as f64 * 0.15).round() as i64;
+            // Look up provider commission rate.
+            let commission_bps = insurance
+                .providers
+                .get(&policy.provider_id)
+                .map(|p| p.commission_rate_bps)
+                .unwrap_or(1500); // default 15%
+            let commission =
+                (policy.premium_micro_usd as f64 * commission_bps as f64 / 10_000.0).round() as i64;
+
+            // Store the full policy for claim verification.
+            insurance.store_policy(policy.clone());
 
             // Emit events.
             let issue_event = FinanceEventKind::PolicyIssued {
@@ -223,7 +217,8 @@ async fn bind_quote(
                 "status": "bound",
                 "policy": serde_json::to_value(&policy).unwrap_or_default(),
                 "premium_collected": policy.premium_micro_usd,
-                "commission": commission
+                "commission": commission,
+                "commission_rate_bps": commission_bps
             }))
         }
         None => Json(json!({
@@ -259,93 +254,219 @@ async fn list_policies(
 }
 
 /// `POST /v1/insurance/claims` — Submit an insurance claim.
+///
+/// Validates against the stored policy before accepting the claim.
 async fn submit_claim(
     State(state): State<AppState>,
     Json(request): Json<ClaimRequest>,
 ) -> Json<Value> {
-    // For now, we don't have the full policy object stored in the projection
-    // (only IDs). In a full implementation, we'd look up the policy from Lago.
-    // Here we validate the request and emit the claim event.
+    let mut insurance = state.insurance_state.write().await;
 
-    let claim_id = format!("claim-{}", Utc::now().timestamp_millis());
-
-    let event = FinanceEventKind::ClaimSubmitted {
-        claim_id: claim_id.clone(),
-        policy_id: request.policy_id.clone(),
-        agent_id: request.agent_id.clone(),
-        incident_type: request.incident_type.to_string(),
-        claimed_amount_micro_usd: request.claimed_amount_micro_usd,
+    // Look up the policy to validate the claim.
+    let policy = match insurance.get_policy(&request.policy_id) {
+        Some(p) => p.clone(),
+        None => {
+            return Json(json!({
+                "error": "policy not found",
+                "policy_id": request.policy_id
+            }));
+        }
     };
 
-    let mut insurance = state.insurance_state.write().await;
-    insurance.apply(&event, Utc::now());
+    // Validate the claim against the policy using haima-insurance logic.
+    let claim_id = format!("claim-{}", Utc::now().timestamp_millis());
+    match haima_insurance::claims::process_claim(&request, &policy, &claim_id) {
+        Ok(claim) => {
+            // Store the full claim for later verification.
+            insurance.store_claim(claim);
 
-    Json(json!({
-        "status": "submitted",
-        "claim_id": claim_id,
-        "policy_id": request.policy_id,
-        "claimed_amount_micro_usd": request.claimed_amount_micro_usd
-    }))
+            let event = FinanceEventKind::ClaimSubmitted {
+                claim_id: claim_id.clone(),
+                policy_id: request.policy_id.clone(),
+                agent_id: request.agent_id.clone(),
+                incident_type: request.incident_type.to_string(),
+                claimed_amount_micro_usd: request.claimed_amount_micro_usd,
+            };
+            insurance.apply(&event, Utc::now());
+
+            Json(json!({
+                "status": "submitted",
+                "claim_id": claim_id,
+                "policy_id": request.policy_id,
+                "claimed_amount_micro_usd": request.claimed_amount_micro_usd
+            }))
+        }
+        Err(e) => Json(json!({
+            "error": e.to_string(),
+            "policy_id": request.policy_id
+        })),
+    }
 }
 
 /// `GET /v1/insurance/claims/:claim_id` — Get claim details.
-///
-/// In a full implementation this would query Lago journal. For now returns
-/// aggregate claim stats.
-async fn get_claim(
-    State(state): State<AppState>,
-    Path(claim_id): Path<String>,
-) -> Json<Value> {
+async fn get_claim(State(state): State<AppState>, Path(claim_id): Path<String>) -> Json<Value> {
     let insurance = state.insurance_state.read().await;
-    Json(json!({
-        "claim_id": claim_id,
-        "total_claims_submitted": insurance.claims_submitted,
-        "total_claims_approved": insurance.claims_approved,
-        "total_claims_paid": insurance.claims_paid,
-        "total_claims_denied": insurance.claims_denied,
-        "note": "full claim details require Lago journal query (Phase F2)"
-    }))
+    match insurance.get_claim(&claim_id) {
+        Some(claim) => Json(serde_json::to_value(claim).unwrap_or_default()),
+        None => Json(json!({
+            "error": "claim not found",
+            "claim_id": claim_id
+        })),
+    }
 }
 
 /// Request body for claim verification trigger.
 #[derive(Debug, Deserialize)]
 struct VerifyClaimRequest {
     /// Number of evidence events validated against Lago journal.
-    evidence_valid_count: u32,
-    /// Whether the claimed amount is consistent with evidence.
-    amount_consistent: bool,
+    /// If not provided, defaults to the count of evidence_event_ids on the claim
+    /// (simulating full automated validation).
+    evidence_valid_count: Option<u32>,
 }
 
 /// `POST /v1/insurance/claims/:claim_id/verify` — Trigger claim verification.
 ///
-/// In production, this would be called by an automated verification service
-/// that has already checked the Lago journal. For now it accepts manual input.
+/// Verifies the claim against the stored policy using automated logic.
+/// If `evidence_valid_count` is not provided, assumes all evidence events
+/// were validated (full automated verification from Lago journal).
 async fn verify_claim_endpoint(
     State(state): State<AppState>,
     Path(claim_id): Path<String>,
     Json(request): Json<VerifyClaimRequest>,
 ) -> Json<Value> {
-    let incident_confirmed =
-        request.evidence_valid_count > 0 && request.amount_consistent;
-    let confidence = if incident_confirmed { 0.85 } else { 0.2 };
+    let mut insurance = state.insurance_state.write().await;
+
+    // Look up the stored claim.
+    let claim = match insurance.get_claim(&claim_id) {
+        Some(c) => c.clone(),
+        None => {
+            return Json(json!({
+                "error": "claim not found",
+                "claim_id": claim_id
+            }));
+        }
+    };
+
+    // Look up the policy for this claim.
+    let policy = match insurance.get_policy(&claim.policy_id) {
+        Some(p) => p.clone(),
+        None => {
+            return Json(json!({
+                "error": "policy not found for claim",
+                "claim_id": claim_id,
+                "policy_id": claim.policy_id
+            }));
+        }
+    };
+
+    // Determine evidence valid count — default to all submitted evidence
+    // (simulates automated Lago journal verification).
+    let evidence_valid_count = request
+        .evidence_valid_count
+        .unwrap_or(claim.evidence_event_ids.len() as u32);
+
+    // Use the haima-insurance verification engine.
+    let verification = haima_insurance::claims::verify_claim(&claim, &policy, evidence_valid_count);
+
+    let approved = verification.incident_confirmed
+        && verification.amount_consistent
+        && verification.policy_active_at_incident
+        && verification.confidence >= 0.7;
 
     let event = FinanceEventKind::ClaimVerified {
         claim_id: claim_id.clone(),
-        policy_id: "pending-lookup".into(), // Would come from Lago in production
-        incident_confirmed,
-        confidence,
-        evidence_events_validated: request.evidence_valid_count,
+        policy_id: claim.policy_id.clone(),
+        incident_confirmed: verification.incident_confirmed,
+        confidence: verification.confidence,
+        evidence_events_validated: evidence_valid_count,
     };
-
-    let mut insurance = state.insurance_state.write().await;
     insurance.apply(&event, Utc::now());
 
+    // If approved, calculate payout and process.
+    if approved {
+        let payout = haima_insurance::claims::calculate_payout(
+            claim.claimed_amount_micro_usd,
+            policy.deductible_micro_usd,
+            policy.coverage_limit_micro_usd - policy.claims_paid_micro_usd,
+        );
+
+        // Process pool payout if pool-backed.
+        let source = if let Some(ref pool) = insurance.pool {
+            if pool.pool_id == policy.provider_id {
+                "pool".to_string()
+            } else {
+                policy.provider_id.clone()
+            }
+        } else {
+            policy.provider_id.clone()
+        };
+
+        // Emit payout events.
+        if source == "pool" {
+            if let Some(ref mut pool) = insurance.pool {
+                if pool.reserves_micro_usd >= payout {
+                    pool.reserves_micro_usd -= payout;
+                    pool.total_payouts_micro_usd += payout;
+                }
+            }
+            let pool_reserves = insurance
+                .pool
+                .as_ref()
+                .map(|p| p.reserves_micro_usd)
+                .unwrap_or(0);
+            let pool_event = FinanceEventKind::PoolPayout {
+                pool_id: policy.provider_id.clone(),
+                claim_id: claim_id.clone(),
+                amount_micro_usd: payout,
+                reserves_after_micro_usd: pool_reserves,
+            };
+            insurance.apply(&pool_event, Utc::now());
+        }
+
+        let paid_event = FinanceEventKind::ClaimPaid {
+            claim_id: claim_id.clone(),
+            policy_id: claim.policy_id.clone(),
+            agent_id: claim.agent_id.clone(),
+            payout_micro_usd: payout,
+            source: source.clone(),
+        };
+        insurance.apply(&paid_event, Utc::now());
+
+        // Update stored claim with verification.
+        if let Some(stored_claim) = insurance.get_claim_mut(&claim_id) {
+            stored_claim.verification = Some(verification.clone());
+        }
+
+        return Json(json!({
+            "status": "approved_and_paid",
+            "claim_id": claim_id,
+            "verification": serde_json::to_value(&verification).unwrap_or_default(),
+            "payout_micro_usd": payout,
+            "source": source
+        }));
+    }
+
+    // Not auto-approved — update claim with verification result.
+    let status = if verification.confidence < 0.3 {
+        let deny_event = FinanceEventKind::ClaimDenied {
+            claim_id: claim_id.clone(),
+            policy_id: claim.policy_id.clone(),
+            reason: "automated verification failed — insufficient evidence".into(),
+        };
+        insurance.apply(&deny_event, Utc::now());
+        "denied"
+    } else {
+        "under_review"
+    };
+
+    if let Some(stored_claim) = insurance.get_claim_mut(&claim_id) {
+        stored_claim.verification = Some(verification.clone());
+    }
+
     Json(json!({
-        "status": if incident_confirmed { "verified" } else { "under_review" },
+        "status": status,
         "claim_id": claim_id,
-        "incident_confirmed": incident_confirmed,
-        "confidence": confidence,
-        "evidence_validated": request.evidence_valid_count
+        "verification": serde_json::to_value(&verification).unwrap_or_default()
     }))
 }
 
@@ -412,7 +533,11 @@ async fn pool_contribute(
     };
     insurance.apply(&event, Utc::now());
 
-    let reserves = insurance.pool.as_ref().map(|p| p.reserves_micro_usd).unwrap_or(0);
+    let reserves = insurance
+        .pool
+        .as_ref()
+        .map(|p| p.reserves_micro_usd)
+        .unwrap_or(0);
 
     Json(json!({
         "status": "contributed",

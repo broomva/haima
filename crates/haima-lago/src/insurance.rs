@@ -12,7 +12,8 @@ use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use haima_core::event::FinanceEventKind;
 use haima_core::insurance::{
-    ClaimStatus, InsurancePool, InsuranceProduct, InsuranceProvider, InsuranceQuote, PoolStatus,
+    ClaimStatus, InsuranceClaim, InsurancePolicy, InsurancePool, InsuranceProduct,
+    InsuranceProvider, InsuranceQuote, PolicyStatus, PoolStatus,
 };
 use haima_core::marketplace::{ClaimsHistory, InsuranceDashboard};
 use serde::{Deserialize, Serialize};
@@ -35,6 +36,9 @@ pub struct InsuranceState {
     pub quotes: HashMap<String, InsuranceQuote>,
 
     // -- Policy tracking --
+    /// Full policies, keyed by `policy_id`.
+    pub policies: HashMap<String, InsurancePolicy>,
+
     /// Active policy count per agent.
     pub policies_by_agent: HashMap<String, Vec<String>>,
 
@@ -42,6 +46,9 @@ pub struct InsuranceState {
     pub active_policies: u32,
 
     // -- Claims tracking --
+    /// Full claims, keyed by `claim_id`.
+    pub claims: HashMap<String, InsuranceClaim>,
+
     /// Claims by status for dashboard metrics.
     pub claims_submitted: u32,
     pub claims_approved: u32,
@@ -69,6 +76,31 @@ pub struct InsuranceState {
 }
 
 impl InsuranceState {
+    /// Store a fully constructed policy in the state.
+    pub fn store_policy(&mut self, policy: InsurancePolicy) {
+        self.policies.insert(policy.policy_id.clone(), policy);
+    }
+
+    /// Store a claim in the state.
+    pub fn store_claim(&mut self, claim: InsuranceClaim) {
+        self.claims.insert(claim.claim_id.clone(), claim);
+    }
+
+    /// Look up a policy by ID.
+    pub fn get_policy(&self, policy_id: &str) -> Option<&InsurancePolicy> {
+        self.policies.get(policy_id)
+    }
+
+    /// Look up a claim by ID.
+    pub fn get_claim(&self, claim_id: &str) -> Option<&InsuranceClaim> {
+        self.claims.get(claim_id)
+    }
+
+    /// Get a mutable reference to a claim.
+    pub fn get_claim_mut(&mut self, claim_id: &str) -> Option<&mut InsuranceClaim> {
+        self.claims.get_mut(claim_id)
+    }
+
     /// Apply an insurance-related finance event to update the projection.
     ///
     /// This is the core fold function — must be deterministic and pure.
@@ -120,9 +152,7 @@ impl InsuranceState {
                 }
             }
 
-            FinanceEventKind::ClaimSubmitted {
-                agent_id, ..
-            } => {
+            FinanceEventKind::ClaimSubmitted { agent_id, .. } => {
                 self.last_event_at = Some(timestamp);
                 self.claims_submitted += 1;
 
@@ -131,17 +161,27 @@ impl InsuranceState {
             }
 
             FinanceEventKind::ClaimVerified {
-                incident_confirmed, ..
+                claim_id,
+                incident_confirmed,
+                ..
             } => {
                 self.last_event_at = Some(timestamp);
                 if *incident_confirmed {
                     self.claims_approved += 1;
+                    // Update stored claim status.
+                    if let Some(claim) = self.claims.get_mut(claim_id) {
+                        claim.status = ClaimStatus::Approved;
+                    }
                 } else {
                     self.claims_under_review += 1;
+                    if let Some(claim) = self.claims.get_mut(claim_id) {
+                        claim.status = ClaimStatus::UnderReview;
+                    }
                 }
             }
 
             FinanceEventKind::ClaimPaid {
+                claim_id,
                 agent_id,
                 payout_micro_usd,
                 ..
@@ -153,16 +193,39 @@ impl InsuranceState {
                 let history = self.agent_claims.entry(agent_id.clone()).or_default();
                 history.approved_claims += 1;
                 history.total_payout_micro_usd += payout_micro_usd;
+
+                // Update stored claim and policy.
+                if let Some(claim) = self.claims.get_mut(claim_id) {
+                    claim.status = ClaimStatus::Paid;
+                    claim.approved_amount_micro_usd = Some(*payout_micro_usd);
+                    claim.resolved_at = Some(timestamp);
+
+                    // Update the policy's claims tracking.
+                    if let Some(policy) = self.policies.get_mut(&claim.policy_id) {
+                        policy.claims_paid_micro_usd += payout_micro_usd;
+                        policy.claims_count += 1;
+                        // Exhaust policy if coverage limit reached.
+                        if policy.claims_paid_micro_usd >= policy.coverage_limit_micro_usd {
+                            policy.status = PolicyStatus::Exhausted;
+                        }
+                    }
+                }
             }
 
-            FinanceEventKind::ClaimDenied { .. } => {
+            FinanceEventKind::ClaimDenied {
+                claim_id, reason, ..
+            } => {
                 self.last_event_at = Some(timestamp);
                 self.claims_denied += 1;
+                if let Some(claim) = self.claims.get_mut(claim_id) {
+                    claim.status = ClaimStatus::Denied;
+                    claim.resolution_notes = Some(reason.clone());
+                    claim.resolved_at = Some(timestamp);
+                }
             }
 
             FinanceEventKind::PoolContribution {
-                amount_micro_usd,
-                ..
+                amount_micro_usd, ..
             } => {
                 self.last_event_at = Some(timestamp);
                 if let Some(ref mut pool) = self.pool {
@@ -217,11 +280,7 @@ impl InsuranceState {
     /// Generate the insurance marketplace dashboard.
     pub fn dashboard(&self) -> InsuranceDashboard {
         let (pool_reserves, pool_ratio, pool_status) = match &self.pool {
-            Some(pool) => (
-                pool.reserves_micro_usd,
-                pool.reserve_ratio,
-                pool.status,
-            ),
+            Some(pool) => (pool.reserves_micro_usd, pool.reserve_ratio, pool.status),
             None => (0, 0.0, PoolStatus::Active),
         };
 
@@ -264,7 +323,9 @@ mod tests {
         for p in products {
             state.products.insert(p.product_id.clone(), p);
         }
-        state.providers.insert(provider.provider_id.clone(), provider);
+        state
+            .providers
+            .insert(provider.provider_id.clone(), provider);
         state
     }
 
@@ -287,12 +348,13 @@ mod tests {
 
         assert_eq!(state.active_policies, 1);
         assert_eq!(state.total_premiums_collected, 50_000);
+        assert_eq!(state.policies_by_agent.get("agent-1").unwrap().len(), 1);
         assert_eq!(
-            state.policies_by_agent.get("agent-1").unwrap().len(),
-            1
-        );
-        assert_eq!(
-            state.pool.as_ref().unwrap().total_coverage_outstanding_micro_usd,
+            state
+                .pool
+                .as_ref()
+                .unwrap()
+                .total_coverage_outstanding_micro_usd,
             5_000_000
         );
     }

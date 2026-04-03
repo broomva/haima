@@ -150,8 +150,7 @@ fn compute_components(
         (1.0 - 0.15 * prior_claims as f64).max(0.0)
     } else {
         // Loss ratio: lower is better for the insurer.
-        let loss_ratio =
-            prior_claims_paid_micro_usd as f64 / total_coverage_micro_usd as f64;
+        let loss_ratio = prior_claims_paid_micro_usd as f64 / total_coverage_micro_usd as f64;
         (1.0 - loss_ratio).clamp(0.0, 1.0)
     };
 
@@ -236,7 +235,8 @@ mod tests {
 
     #[test]
     fn weights_sum_to_one() {
-        let total = W_OPERATIONAL + W_PAYMENT + W_ECONOMIC + W_TASK_COMPLETION + W_MATURITY + W_CLAIMS;
+        let total =
+            W_OPERATIONAL + W_PAYMENT + W_ECONOMIC + W_TASK_COMPLETION + W_MATURITY + W_CLAIMS;
         assert!((total - 1.0).abs() < 1e-10, "weights sum to {total}");
     }
 
@@ -276,10 +276,26 @@ mod tests {
 
     #[test]
     fn eligibility_check() {
-        assert!(is_eligible_for_insurance(0.8, CreditTier::Standard, InsuranceTrustTier::Any));
-        assert!(is_eligible_for_insurance(0.8, CreditTier::Standard, InsuranceTrustTier::Trusted));
-        assert!(!is_eligible_for_insurance(0.4, CreditTier::Standard, InsuranceTrustTier::Trusted));
-        assert!(!is_eligible_for_insurance(0.9, CreditTier::None, InsuranceTrustTier::Any));
+        assert!(is_eligible_for_insurance(
+            0.8,
+            CreditTier::Standard,
+            InsuranceTrustTier::Any
+        ));
+        assert!(is_eligible_for_insurance(
+            0.8,
+            CreditTier::Standard,
+            InsuranceTrustTier::Trusted
+        ));
+        assert!(!is_eligible_for_insurance(
+            0.4,
+            CreditTier::Standard,
+            InsuranceTrustTier::Trusted
+        ));
+        assert!(!is_eligible_for_insurance(
+            0.9,
+            CreditTier::None,
+            InsuranceTrustTier::Any
+        ));
     }
 
     #[test]

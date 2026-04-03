@@ -135,8 +135,8 @@ pub fn verify_claim(
 
     // Amount consistency: claimed amount should not exceed coverage.
     let remaining = policy.coverage_limit_micro_usd - policy.claims_paid_micro_usd;
-    let amount_consistent = claim.claimed_amount_micro_usd <= remaining
-        && claim.claimed_amount_micro_usd > 0;
+    let amount_consistent =
+        claim.claimed_amount_micro_usd <= remaining && claim.claimed_amount_micro_usd > 0;
 
     if !amount_consistent {
         notes.push(format!(

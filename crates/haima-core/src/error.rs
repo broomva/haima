@@ -46,7 +46,6 @@ pub enum HaimaError {
     InsufficientCredit { reason: String },
 
     // -- Insurance errors --
-
     #[error("policy not found: {0}")]
     PolicyNotFound(String),
 

@@ -57,10 +57,10 @@ pub fn create_default_products(pool_provider_id: &str) -> Vec<InsuranceProduct> 
             description: "Covers customer losses from failed agent tasks, including \
                 partial completions, incorrect outputs, and timeouts."
                 .into(),
-            base_rate_bps: 150, // 1.5%
-            min_coverage_micro_usd: 100_000,        // $0.10
-            max_coverage_micro_usd: 100_000_000,     // $100
-            default_deductible_micro_usd: 50_000,    // $0.05
+            base_rate_bps: 150,                   // 1.5%
+            min_coverage_micro_usd: 100_000,      // $0.10
+            max_coverage_micro_usd: 100_000_000,  // $100
+            default_deductible_micro_usd: 50_000, // $0.05
             period_secs: STANDARD_PERIOD_SECS,
             min_trust_tier: InsuranceTrustTier::Any,
             provider_id: pool_provider_id.to_string(),
@@ -73,10 +73,10 @@ pub fn create_default_products(pool_provider_id: &str) -> Vec<InsuranceProduct> 
             description: "Covers losses from erroneous payments, incorrect transaction \
                 amounts, and misrouted funds caused by agent actions."
                 .into(),
-            base_rate_bps: 200, // 2%
-            min_coverage_micro_usd: 1_000_000,      // $1
-            max_coverage_micro_usd: 500_000_000,     // $500
-            default_deductible_micro_usd: 100_000,   // $0.10
+            base_rate_bps: 200,                    // 2%
+            min_coverage_micro_usd: 1_000_000,     // $1
+            max_coverage_micro_usd: 500_000_000,   // $500
+            default_deductible_micro_usd: 100_000, // $0.10
             period_secs: STANDARD_PERIOD_SECS,
             min_trust_tier: InsuranceTrustTier::Provisional,
             provider_id: pool_provider_id.to_string(),
@@ -89,10 +89,10 @@ pub fn create_default_products(pool_provider_id: &str) -> Vec<InsuranceProduct> 
             description: "Covers liability from agent-caused data exposure, including \
                 unauthorized access, data leakage, and PII exposure."
                 .into(),
-            base_rate_bps: 300, // 3%
-            min_coverage_micro_usd: 5_000_000,      // $5
-            max_coverage_micro_usd: 1_000_000_000,   // $1,000
-            default_deductible_micro_usd: 500_000,   // $0.50
+            base_rate_bps: 300,                    // 3%
+            min_coverage_micro_usd: 5_000_000,     // $5
+            max_coverage_micro_usd: 1_000_000_000, // $1,000
+            default_deductible_micro_usd: 500_000, // $0.50
             period_secs: STANDARD_PERIOD_SECS,
             min_trust_tier: InsuranceTrustTier::Trusted,
             provider_id: pool_provider_id.to_string(),
@@ -105,10 +105,10 @@ pub fn create_default_products(pool_provider_id: &str) -> Vec<InsuranceProduct> 
             description: "Covers SLA breach penalties including response time violations, \
                 uptime failures, and throughput shortfalls."
                 .into(),
-            base_rate_bps: 100, // 1%
-            min_coverage_micro_usd: 100_000,         // $0.10
-            max_coverage_micro_usd: 50_000_000,      // $50
-            default_deductible_micro_usd: 25_000,     // $0.025
+            base_rate_bps: 100,                   // 1%
+            min_coverage_micro_usd: 100_000,      // $0.10
+            max_coverage_micro_usd: 50_000_000,   // $50
+            default_deductible_micro_usd: 25_000, // $0.025
             period_secs: STANDARD_PERIOD_SECS,
             min_trust_tier: InsuranceTrustTier::Any,
             provider_id: pool_provider_id.to_string(),
@@ -122,11 +122,10 @@ pub fn create_default_products(pool_provider_id: &str) -> Vec<InsuranceProduct> 
 // ---------------------------------------------------------------------------
 
 /// Register a new insurance provider on the marketplace.
-pub fn register_provider(
-    state: &mut MarketplaceState,
-    provider: InsuranceProvider,
-) {
-    state.providers.insert(provider.provider_id.clone(), provider);
+pub fn register_provider(state: &mut MarketplaceState, provider: InsuranceProvider) {
+    state
+        .providers
+        .insert(provider.provider_id.clone(), provider);
 }
 
 /// Create a default self-insurance pool provider.
@@ -309,9 +308,11 @@ fn find_product<'a>(
 ) -> HaimaResult<&'a InsuranceProduct> {
     // If a preferred provider is specified, look for their product.
     if let Some(provider_id) = preferred_provider {
-        if let Some(product) = state.products.values().find(|p| {
-            p.product_type == *product_type && p.provider_id == *provider_id && p.active
-        }) {
+        if let Some(product) = state
+            .products
+            .values()
+            .find(|p| p.product_type == *product_type && p.provider_id == *provider_id && p.active)
+        {
             return Ok(product);
         }
     }
@@ -333,6 +334,7 @@ fn find_product<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pricing::calculate_commission;
     use haima_core::credit::{CreditFactors, compute_credit_score};
 
     fn setup_marketplace() -> MarketplaceState {

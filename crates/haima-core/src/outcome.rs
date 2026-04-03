@@ -138,9 +138,9 @@ impl Default for RefundPolicy {
     fn default() -> Self {
         Self {
             auto_refund: true,
-            sla_seconds: 3600,          // 1 hour
-            refund_percentage: 100,     // full refund
-            grace_period_seconds: 300,  // 5 minute grace
+            sla_seconds: 3600,         // 1 hour
+            refund_percentage: 100,    // full refund
+            grace_period_seconds: 300, // 5 minute grace
         }
     }
 }
@@ -200,8 +200,7 @@ impl TaskContract {
 
         let complexity_offset = (range as f64 * complexity.range_position()) as i64;
         // Trust discount: up to 20% of the range for a perfect trust score.
-        let trust_discount =
-            (range as f64 * trust_score.clamp(0.0, 1.0) * 0.2) as i64;
+        let trust_discount = (range as f64 * trust_score.clamp(0.0, 1.0) * 0.2) as i64;
 
         let price = self.price_floor_micro_credits + complexity_offset - trust_discount;
         // Clamp to [floor, ceiling].
