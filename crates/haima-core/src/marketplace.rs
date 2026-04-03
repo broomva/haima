@@ -47,10 +47,10 @@ pub fn assess_risk(
     let econ_based = credit.map(|c| c.factors.economic_stability).unwrap_or(0.5);
 
     let components = RiskComponents {
-        operational_reliability: trust_based.max(0.0).min(1.0),
-        payment_reliability: payment_based.max(0.0).min(1.0),
-        economic_stability: econ_based.max(0.0).min(1.0),
-        task_completion_rate: trust_based.max(0.0).min(1.0),
+        operational_reliability: trust_based.clamp(0.0, 1.0),
+        payment_reliability: payment_based.clamp(0.0, 1.0),
+        economic_stability: econ_based.clamp(0.0, 1.0),
+        task_completion_rate: trust_based.clamp(0.0, 1.0),
         account_maturity: compute_maturity_factor(
             credit.map(|c| c.factors.account_age_days).unwrap_or(0),
         ),
@@ -150,7 +150,7 @@ fn compute_maturity_factor(account_age_days: u32) -> f64 {
 
 /// Calculate the premium for a coverage request.
 ///
-/// premium = base_rate * coverage * period_factor * risk_multiplier
+/// premium = `base_rate` * coverage * `period_factor` * `risk_multiplier`
 pub fn calculate_premium(
     product: &InsuranceProduct,
     coverage_micro_usd: i64,

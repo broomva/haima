@@ -37,9 +37,9 @@ pub struct MarketplaceState {
     pub products: HashMap<String, InsuranceProduct>,
     /// Registered providers.
     pub providers: HashMap<String, InsuranceProvider>,
-    /// Active quotes (keyed by quote_id).
+    /// Active quotes (keyed by `quote_id`).
     pub quotes: HashMap<String, InsuranceQuote>,
-    /// Active policies (keyed by policy_id).
+    /// Active policies (keyed by `policy_id`).
     pub policies: HashMap<String, InsurancePolicy>,
 }
 
@@ -152,6 +152,7 @@ pub fn create_pool_provider(provider_id: &str) -> InsuranceProvider {
 // ---------------------------------------------------------------------------
 
 /// Generate an insurance quote for an agent.
+#[allow(clippy::too_many_arguments)]
 pub fn get_quote(
     state: &MarketplaceState,
     request: &QuoteRequest,
@@ -220,7 +221,7 @@ pub fn get_quote(
     }
 
     // Calculate premium.
-    let premium = calculate_premium(&product, request.coverage_micro_usd, &risk_assessment);
+    let premium = calculate_premium(product, request.coverage_micro_usd, &risk_assessment);
     let now = Utc::now();
 
     Ok(InsuranceQuote {
@@ -301,6 +302,7 @@ pub fn bind_policy(
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::trivially_copy_pass_by_ref)]
 fn find_product<'a>(
     state: &'a MarketplaceState,
     product_type: &InsuranceProductType,
@@ -427,7 +429,7 @@ mod tests {
         };
 
         let quote = get_quote(&state, &request, &cs, 0.8, 0.9, 0.85, 60, 0, 0, "q-bind").unwrap();
-        state.quotes.insert(quote.quote_id.clone(), quote.clone());
+        state.quotes.insert(quote.quote_id.clone(), quote);
 
         let bind = BindRequest {
             quote_id: "q-bind".into(),

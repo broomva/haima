@@ -652,7 +652,7 @@ mod tests {
         let accrued = accrue_interest(&mut line);
         // 50,000 * 10% = 5,000 (approximately, due to slight time differences)
         assert!(
-            accrued >= 4_900 && accrued <= 5_100,
+            (4_900..=5_100).contains(&accrued),
             "expected ~5000, got {}",
             accrued
         );

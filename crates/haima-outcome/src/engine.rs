@@ -540,7 +540,6 @@ impl OutcomeEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use haima_core::outcome::{default_code_review_contract, default_support_ticket_contract};
 
     fn make_engine() -> OutcomeEngine {
         let outcome_state = Arc::new(RwLock::new(OutcomePricingState::default()));

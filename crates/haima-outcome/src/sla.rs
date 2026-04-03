@@ -133,6 +133,7 @@ pub async fn check_expired_tasks(
 ///
 /// Returns a `JoinHandle` that can be used to cancel the monitor.
 /// The monitor runs indefinitely until the handle is dropped or aborted.
+#[allow(clippy::needless_pass_by_value)] // config is moved into the spawned task
 pub fn spawn_sla_monitor(
     outcome_state: Arc<RwLock<OutcomePricingState>>,
     config: SlaMonitorConfig,

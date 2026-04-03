@@ -169,7 +169,7 @@ pub fn verify_claim(
 
 /// Calculate the payout amount for an approved claim.
 ///
-/// Payout = claimed_amount - deductible, clamped to remaining coverage.
+/// Payout = `claimed_amount` - deductible, clamped to remaining coverage.
 pub fn calculate_payout(
     claimed_micro_usd: i64,
     deductible_micro_usd: i64,

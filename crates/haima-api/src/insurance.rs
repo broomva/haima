@@ -163,13 +163,10 @@ async fn bind_quote(
 ) -> Json<Value> {
     let mut insurance = state.insurance_state.write().await;
 
-    let quote = match insurance.quotes.remove(&request.quote_id) {
-        Some(q) => q,
-        None => {
-            return Json(json!({
-                "error": "quote not found or already used"
-            }));
-        }
+    let Some(quote) = insurance.quotes.remove(&request.quote_id) else {
+        return Json(json!({
+            "error": "quote not found or already used"
+        }));
     };
 
     if quote.agent_id != request.agent_id {
@@ -319,7 +316,7 @@ async fn get_claim(State(state): State<AppState>, Path(claim_id): Path<String>) 
 #[derive(Debug, Deserialize)]
 struct VerifyClaimRequest {
     /// Number of evidence events validated against Lago journal.
-    /// If not provided, defaults to the count of evidence_event_ids on the claim
+    /// If not provided, defaults to the count of `evidence_event_ids` on the claim
     /// (simulating full automated validation).
     evidence_valid_count: Option<u32>,
 }
@@ -415,7 +412,7 @@ async fn verify_claim_endpoint(
                 .map(|p| p.reserves_micro_usd)
                 .unwrap_or(0);
             let pool_event = FinanceEventKind::PoolPayout {
-                pool_id: policy.provider_id.clone(),
+                pool_id: policy.provider_id,
                 claim_id: claim_id.clone(),
                 amount_micro_usd: payout,
                 reserves_after_micro_usd: pool_reserves,
@@ -426,7 +423,7 @@ async fn verify_claim_endpoint(
         let paid_event = FinanceEventKind::ClaimPaid {
             claim_id: claim_id.clone(),
             policy_id: claim.policy_id.clone(),
-            agent_id: claim.agent_id.clone(),
+            agent_id: claim.agent_id,
             payout_micro_usd: payout,
             source: source.clone(),
         };
@@ -450,7 +447,7 @@ async fn verify_claim_endpoint(
     let status = if verification.confidence < 0.3 {
         let deny_event = FinanceEventKind::ClaimDenied {
             claim_id: claim_id.clone(),
-            policy_id: claim.policy_id.clone(),
+            policy_id: claim.policy_id,
             reason: "automated verification failed — insufficient evidence".into(),
         };
         insurance.apply(&deny_event, Utc::now());

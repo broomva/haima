@@ -211,8 +211,10 @@ mod tests {
 
     #[test]
     fn reset_session() {
-        let mut state = FinancialState::default();
-        state.session_spend = 50_000;
+        let mut state = FinancialState {
+            session_spend: 50_000,
+            ..Default::default()
+        };
         state.reset_session();
         assert_eq!(state.session_spend, 0);
         // Lifetime totals are not reset

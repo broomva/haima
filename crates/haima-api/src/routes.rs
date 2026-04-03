@@ -388,8 +388,6 @@ mod tests {
             email: email.to_string(),
             exp: now + 3600,
             iat: now,
-            tenant_id: None,
-            tenant_tier: None,
         };
         let key = EncodingKey::from_secret(secret.as_bytes());
         encode(&Header::default(), &claims, &key).unwrap()

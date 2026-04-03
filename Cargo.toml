@@ -23,6 +23,7 @@ todo = "warn"
 unimplemented = "warn"
 
 # Correctness & performance
+too_many_arguments = "warn"
 needless_pass_by_value = "warn"
 cloned_instead_of_copied = "warn"
 redundant_clone = "warn"

@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 /// Implementations must be `Send + Sync` so they can be used across async tasks.
 #[async_trait]
 pub trait SuccessVerifier: Send + Sync {
-    /// Human-readable name for this verifier (e.g., "tests_passed", "webhook").
+    /// Human-readable name for this verifier (e.g., "`tests_passed`", "webhook").
     fn name(&self) -> &str;
 
     /// Check whether the criterion is satisfied for the given task.

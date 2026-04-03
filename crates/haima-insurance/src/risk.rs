@@ -57,6 +57,7 @@ const MIN_INSURABLE_SCORE: f64 = 0.20;
 ///
 /// Takes the agent's credit score (which embeds trust and payment factors)
 /// plus optional additional signals to compute a comprehensive risk assessment.
+#[allow(clippy::too_many_arguments)]
 pub fn assess_risk(
     agent_id: &str,
     credit_score: &CreditScore,
@@ -130,6 +131,7 @@ pub fn is_eligible_for_insurance(
 // Internal
 // ---------------------------------------------------------------------------
 
+#[allow(clippy::too_many_arguments)]
 fn compute_components(
     operational_reliability: f64,
     payment_history: f64,

@@ -70,7 +70,7 @@ pub enum TaskComplexity {
 
 impl TaskComplexity {
     /// Multiplier applied to the base price (0.0 - 1.0 within the range).
-    fn range_position(&self) -> f64 {
+    fn range_position(self) -> f64 {
         match self {
             Self::Simple => 0.0,
             Self::Standard => 0.33,
@@ -161,9 +161,9 @@ pub struct TaskContract {
     pub task_type: TaskType,
     /// Human-readable name for this contract.
     pub name: String,
-    /// Minimum price in micro-credits (e.g., 500_000 = $0.50).
+    /// Minimum price in micro-credits (e.g., `500_000` = $0.50).
     pub price_floor_micro_credits: i64,
-    /// Maximum price in micro-credits (e.g., 5_000_000 = $5.00).
+    /// Maximum price in micro-credits (e.g., `5_000_000` = $5.00).
     pub price_ceiling_micro_credits: i64,
     /// Success criteria that must all be satisfied.
     pub success_criteria: Vec<SuccessCriterion>,

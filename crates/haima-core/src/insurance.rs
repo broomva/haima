@@ -353,7 +353,7 @@ pub struct InsurancePool {
     pub active_policies: u32,
     /// Total coverage outstanding across all active policies.
     pub total_coverage_outstanding_micro_usd: i64,
-    /// Reserve ratio: reserves / total_coverage_outstanding.
+    /// Reserve ratio: reserves / `total_coverage_outstanding`.
     pub reserve_ratio: f64,
     /// Management fee in basis points (2-3% = 200-300 bps).
     pub management_fee_bps: u32,

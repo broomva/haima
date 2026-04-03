@@ -79,6 +79,7 @@ impl AppState {
     /// Create a new `AppState` with the insurance marketplace bootstrapped
     /// (default pool with seed reserves, products, self-insurance provider,
     /// and a licensed MGA provider stub).
+    #[allow(clippy::field_reassign_with_default)]
     pub fn with_insurance(auth_config: AuthConfig) -> Self {
         let pool_id = "life-network-pool";
         let mut pool = haima_core::marketplace::create_pool(
@@ -110,17 +111,19 @@ impl AppState {
             registered_at: chrono::Utc::now(),
         };
 
-        let mut insurance = InsuranceState::default();
-        insurance.pool = Some(pool);
+        let mut products_map = std::collections::HashMap::new();
         for p in products {
-            insurance.products.insert(p.product_id.clone(), p);
+            products_map.insert(p.product_id.clone(), p);
         }
-        insurance
-            .providers
-            .insert(pool_provider.provider_id.clone(), pool_provider);
-        insurance
-            .providers
-            .insert(mga_provider.provider_id.clone(), mga_provider);
+        let mut providers_map = std::collections::HashMap::new();
+        providers_map.insert(pool_provider.provider_id.clone(), pool_provider);
+        providers_map.insert(mga_provider.provider_id.clone(), mga_provider);
+        let insurance = InsuranceState {
+            pool: Some(pool),
+            products: products_map,
+            providers: providers_map,
+            ..Default::default()
+        };
 
         let outcome_state = Arc::new(RwLock::new(OutcomePricingState::default()));
         let financial_state = Arc::new(RwLock::new(FinancialState::default()));

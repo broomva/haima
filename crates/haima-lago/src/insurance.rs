@@ -318,8 +318,10 @@ mod tests {
         let products = haima_core::marketplace::default_products("pool-1");
         let provider = haima_core::marketplace::default_pool_provider("pool-1");
 
-        let mut state = InsuranceState::default();
-        state.pool = Some(pool);
+        let mut state = InsuranceState {
+            pool: Some(pool),
+            ..Default::default()
+        };
         for p in products {
             state.products.insert(p.product_id.clone(), p);
         }
@@ -476,7 +478,7 @@ mod tests {
     #[test]
     fn dashboard_computes_loss_ratio() {
         let mut state = make_state_with_pool();
-        let now = Utc::now();
+        let _now = Utc::now();
 
         // Collect premiums
         state.total_premiums_collected = 1_000_000;
