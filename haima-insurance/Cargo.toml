@@ -1,0 +1,23 @@
+[package]
+name = "haima-insurance"
+description = "Agent insurance facilitation marketplace for the Agent OS"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+
+[dependencies]
+haima-core = { workspace = true }
+autonomic-core = { workspace = true }
+
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+
+[lints]
+workspace = true
