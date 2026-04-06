@@ -309,14 +309,13 @@ fn find_product<'a>(
     preferred_provider: &Option<String>,
 ) -> HaimaResult<&'a InsuranceProduct> {
     // If a preferred provider is specified, look for their product.
-    if let Some(provider_id) = preferred_provider {
-        if let Some(product) = state
+    if let Some(provider_id) = preferred_provider
+        && let Some(product) = state
             .products
             .values()
             .find(|p| p.product_type == *product_type && p.provider_id == *provider_id && p.active)
-        {
-            return Ok(product);
-        }
+    {
+        return Ok(product);
     }
 
     // Otherwise, find any active product of this type.

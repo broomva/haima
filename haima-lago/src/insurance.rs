@@ -123,12 +123,12 @@ impl InsuranceState {
                     .push(policy_id.clone());
 
                 // Update pool if pool-backed.
-                if let Some(ref mut pool) = self.pool {
-                    if &pool.pool_id == provider_id {
-                        pool.active_policies += 1;
-                        pool.total_coverage_outstanding_micro_usd += coverage_micro_usd;
-                        self.update_pool_ratios();
-                    }
+                if let Some(ref mut pool) = self.pool
+                    && &pool.pool_id == provider_id
+                {
+                    pool.active_policies += 1;
+                    pool.total_coverage_outstanding_micro_usd += coverage_micro_usd;
+                    self.update_pool_ratios();
                 }
 
                 // Premium is collected at issuance.

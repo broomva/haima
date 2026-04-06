@@ -400,11 +400,11 @@ async fn verify_claim_endpoint(
 
         // Emit payout events.
         if source == "pool" {
-            if let Some(ref mut pool) = insurance.pool {
-                if pool.reserves_micro_usd >= payout {
-                    pool.reserves_micro_usd -= payout;
-                    pool.total_payouts_micro_usd += payout;
-                }
+            if let Some(ref mut pool) = insurance.pool
+                && pool.reserves_micro_usd >= payout
+            {
+                pool.reserves_micro_usd -= payout;
+                pool.total_payouts_micro_usd += payout;
             }
             let pool_reserves = insurance
                 .pool
