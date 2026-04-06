@@ -1,0 +1,18 @@
+[package]
+name = "life-haima"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Agentic finance engine facade for the Life Agent OS — re-exports haima-core, haima-wallet, haima-x402, and haima-api"
+
+[dependencies]
+haima-core = { path = "../haima-core", version = "0.3.0" }
+haima-wallet = { path = "../haima-wallet", version = "0.3.0" }
+haima-x402 = { path = "../haima-x402", version = "0.3.0" }
+haima-api = { path = "../haima-api", version = "0.3.0" }
+
+[lints]
+workspace = true
