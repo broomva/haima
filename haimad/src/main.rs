@@ -50,7 +50,16 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let args = Args::parse();
+    let mut args = Args::parse();
+
+    // Default to .life/haima/ when a .life/ project directory exists
+    if args.lago_data_dir.is_none()
+        && let Some(root) = life_paths::find_project_root()
+    {
+        let life_dir = root.join(".life").join("haima");
+        info!(path = %life_dir.display(), "using .life/haima/ as default data directory");
+        args.lago_data_dir = Some(life_dir.to_string_lossy().into_owned());
+    }
 
     info!(bind = %args.bind, "starting haimad");
 
