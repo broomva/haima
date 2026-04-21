@@ -8,9 +8,15 @@
 //! backends (e.g., Coinbase CDP MPC) through the `WalletBackend` trait.
 
 pub mod backend;
+pub mod eip712;
 pub mod evm;
 pub mod signer;
 
 pub use backend::WalletBackend;
+pub use eip712::{
+    Eip712Domain, USDC_BASE_MAINNET, USDC_BASE_SEPOLIA, domain_type_hash,
+    hash_transfer_authorization, parse_eth_address, transfer_with_authorization_typehash,
+    usdc_domain_for_chain,
+};
 pub use evm::{decrypt_private_key, derive_address, encrypt_private_key, generate_keypair};
 pub use signer::LocalSigner;
