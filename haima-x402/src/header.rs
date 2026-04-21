@@ -51,6 +51,9 @@ pub struct SchemeRequirement {
     pub recipient: String,
     /// Facilitator URL.
     pub facilitator: String,
+    /// Seconds of validity for the signed authorization. Defaults to 600 (10 min).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_timeout_seconds: Option<u64>,
 }
 
 /// Payment signature sent with a retry request.
@@ -63,8 +66,37 @@ pub struct PaymentSignatureHeader {
     pub scheme: String,
     /// Network in CAIP-2 format.
     pub network: String,
-    /// The cryptographic payload (hex-encoded signed authorization).
+    /// The cryptographic payload — hex-encoded (r || s || v) recoverable ECDSA
+    /// signature over the EIP-712 digest of [`authorization`](Self::authorization).
     pub payload: String,
+    /// EIP-3009 authorization context that the signature authorizes.
+    ///
+    /// Absent for legacy EIP-191 canonical-string signatures produced before
+    /// Phase F1. Facilitators reject authorizations that do not match the
+    /// signed digest when this field is present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authorization: Option<Eip3009Authorization>,
+}
+
+/// EIP-3009 `TransferWithAuthorization` fields carried alongside the signature.
+///
+/// Uses string encoding for `uint256` values to avoid JSON precision issues and
+/// hex encoding for addresses and nonces to match the x402 on-wire format.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct Eip3009Authorization {
+    /// Payer address (`0x`-prefixed hex).
+    pub from: String,
+    /// Recipient address (`0x`-prefixed hex).
+    pub to: String,
+    /// Token amount in smallest unit (decimal string).
+    pub value: String,
+    /// Unix timestamp when the authorization becomes valid (decimal string).
+    pub valid_after: String,
+    /// Unix timestamp when the authorization expires (decimal string).
+    pub valid_before: String,
+    /// 32-byte nonce (`0x`-prefixed hex, 66 chars total).
+    pub nonce: String,
 }
 
 /// Settlement confirmation from a 200 response.
@@ -175,6 +207,7 @@ mod tests {
                 amount: "10000".into(),
                 recipient: "0xrecipient".into(),
                 facilitator: "https://x402.org/facilitator".into(),
+                max_timeout_seconds: None,
             }],
             version: "v2".into(),
         }
@@ -199,6 +232,7 @@ mod tests {
                     amount: "10000".into(),
                     recipient: "0xrecipient".into(),
                     facilitator: "https://x402.org/facilitator".into(),
+                    max_timeout_seconds: None,
                 },
                 SchemeRequirement {
                     scheme: "exact".into(),
@@ -207,6 +241,7 @@ mod tests {
                     amount: "10000".into(),
                     recipient: "0xrecipient".into(),
                     facilitator: "https://x402.org/facilitator".into(),
+                    max_timeout_seconds: None,
                 },
             ],
             version: "v2".into(),
@@ -249,6 +284,7 @@ mod tests {
             scheme: "exact".into(),
             network: "eip155:8453".into(),
             payload: "0xdeadbeef1234567890abcdef".into(),
+            authorization: None,
         }
     }
 

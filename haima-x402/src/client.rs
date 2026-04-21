@@ -20,9 +20,13 @@ use tracing::{debug, info, warn};
 
 use crate::facilitator::{Facilitator, VerifyRequest, VerifyResponse};
 use crate::header::{
-    PaymentRequiredHeader, PaymentResponseHeader, PaymentSignatureHeader, SchemeRequirement,
-    encode_payment_signature, parse_payment_required, parse_payment_response,
+    Eip3009Authorization, PaymentRequiredHeader, PaymentResponseHeader, PaymentSignatureHeader,
+    SchemeRequirement, encode_payment_signature, parse_payment_required, parse_payment_response,
 };
+
+/// Default validity window for signed EIP-3009 authorizations when the
+/// [`SchemeRequirement`] does not set `max_timeout_seconds`.
+const DEFAULT_AUTHORIZATION_WINDOW_SECS: u64 = 600;
 
 /// The result of processing an HTTP 402 response.
 ///
@@ -169,40 +173,70 @@ impl X402Client {
 
     /// Sign a payment for a given scheme requirement.
     ///
-    /// Produces a `PaymentSignatureHeader` ready for encoding and attachment
-    /// to the retry request. This can be called directly when the caller
-    /// has obtained human approval for a `RequiresApproval` decision.
+    /// Produces a `PaymentSignatureHeader` carrying a real EIP-3009
+    /// `transferWithAuthorization` signature plus the authorization payload.
+    /// Callers with an approved `RequiresApproval` decision can invoke this
+    /// directly after getting human sign-off.
+    ///
+    /// # Protocol
+    /// 1. Parse `requirement.amount` as `u64` (USDC's smallest unit).
+    /// 2. Generate a random 32-byte nonce — unique per authorization, so the
+    ///    same agent can submit multiple concurrent payments without collision.
+    /// 3. Set `validAfter = now` and `validBefore = now + max_timeout_seconds`
+    ///    (defaults to 10 minutes).
+    /// 4. Compute the EIP-712 digest and sign it recoverably with the wallet
+    ///    (`WalletBackend::sign_transfer_authorization`).
+    /// 5. Package the 65-byte `(r || s || v)` signature as hex in `payload`
+    ///    and attach the authorization fields so facilitators can reconstruct
+    ///    and verify the digest.
     pub async fn sign_payment(
         &self,
         requirement: &SchemeRequirement,
     ) -> HaimaResult<PaymentSignatureHeader> {
+        use rand::RngCore;
+
         let raw_amount: u64 = requirement.amount.parse().map_err(|e| {
             HaimaError::Protocol(format!("invalid amount '{}': {e}", requirement.amount))
         })?;
 
-        // Sign using EIP-191 personal sign over the payment payload.
-        // The payload is: scheme | network | token | amount | recipient | facilitator
-        // This is a simplified signing scheme. Full EIP-3009 transferWithAuthorization
-        // would use EIP-712 typed data, but that requires the USDC contract's domain
-        // separator which varies by chain. For now we sign a canonical message that
-        // the facilitator can verify.
-        let message = format!(
-            "x402:{}:{}:{}:{}:{}:{}",
-            requirement.scheme,
-            requirement.network,
-            requirement.token,
-            raw_amount,
-            requirement.recipient,
-            requirement.facilitator,
-        );
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let timeout = requirement
+            .max_timeout_seconds
+            .unwrap_or(DEFAULT_AUTHORIZATION_WINDOW_SECS);
+        let valid_after = now;
+        let valid_before = now.saturating_add(timeout);
 
-        let signature = self.wallet.sign_message(message.as_bytes()).await?;
-        let payload = hex::encode(&signature);
+        let mut nonce = [0u8; 32];
+        rand::thread_rng().fill_bytes(&mut nonce);
+
+        let from = self.wallet.address().address.clone();
+        let signature = self
+            .wallet
+            .sign_transfer_authorization(
+                &from,
+                &requirement.recipient,
+                raw_amount,
+                valid_after,
+                valid_before,
+                &nonce,
+            )
+            .await?;
 
         Ok(PaymentSignatureHeader {
             scheme: requirement.scheme.clone(),
             network: requirement.network.clone(),
-            payload,
+            payload: hex::encode(&signature),
+            authorization: Some(Eip3009Authorization {
+                from,
+                to: requirement.recipient.clone(),
+                value: raw_amount.to_string(),
+                valid_after: valid_after.to_string(),
+                valid_before: valid_before.to_string(),
+                nonce: format!("0x{}", hex::encode(nonce)),
+            }),
         })
     }
 
@@ -294,14 +328,19 @@ mod tests {
         X402Client::new(Arc::new(signer), facilitator, PaymentPolicy::default())
     }
 
+    /// Arbitrary valid checksummed 20-byte address used by tests that need a
+    /// parseable recipient (EIP-3009 signing rejects non-hex recipients).
+    const TEST_RECIPIENT: &str = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+
     fn sample_requirement() -> SchemeRequirement {
         SchemeRequirement {
             scheme: "exact".into(),
             network: "eip155:8453".into(),
             token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(),
             amount: "50".into(), // 50 micro-credits, below auto-approve cap of 100
-            recipient: "0xrecipient".into(),
+            recipient: TEST_RECIPIENT.into(),
             facilitator: "https://x402.org/facilitator".into(),
+            max_timeout_seconds: None,
         }
     }
 
@@ -312,8 +351,9 @@ mod tests {
                 network: "eip155:8453".into(),
                 token: "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913".into(),
                 amount: amount.into(),
-                recipient: "0xrecipient".into(),
+                recipient: TEST_RECIPIENT.into(),
                 facilitator: "https://x402.org/facilitator".into(),
+                max_timeout_seconds: None,
             }],
             version: "v2".into(),
         }
@@ -416,6 +456,7 @@ mod tests {
                 amount: "50".into(),
                 recipient: "SoLaNaAddr".into(),
                 facilitator: "https://x402.org/facilitator".into(),
+                max_timeout_seconds: None,
             }],
             version: "v2".into(),
         };
@@ -455,6 +496,65 @@ mod tests {
         assert_eq!(decoded, sig);
     }
 
+    #[tokio::test]
+    async fn sign_payment_populates_eip3009_authorization() {
+        let client = test_client();
+        let requirement = sample_requirement();
+
+        let sig = client.sign_payment(&requirement).await.unwrap();
+
+        let auth = sig
+            .authorization
+            .expect("EIP-3009 authorization must be present");
+        assert_eq!(auth.to.to_lowercase(), TEST_RECIPIENT.to_lowercase());
+        assert_eq!(auth.value, "50");
+        assert!(auth.from.starts_with("0x"));
+        assert!(auth.nonce.starts_with("0x") && auth.nonce.len() == 66);
+        // valid_before > valid_after by the default window
+        let after: u64 = auth.valid_after.parse().unwrap();
+        let before: u64 = auth.valid_before.parse().unwrap();
+        assert!(before > after);
+        assert_eq!(before - after, 600);
+    }
+
+    #[tokio::test]
+    async fn sign_payment_generates_unique_nonce_per_call() {
+        let client = test_client();
+        let requirement = sample_requirement();
+
+        let sig1 = client.sign_payment(&requirement).await.unwrap();
+        let sig2 = client.sign_payment(&requirement).await.unwrap();
+
+        let nonce1 = sig1.authorization.unwrap().nonce;
+        let nonce2 = sig2.authorization.unwrap().nonce;
+        assert_ne!(nonce1, nonce2, "each signature must use a fresh nonce");
+    }
+
+    #[tokio::test]
+    async fn sign_payment_produces_65_byte_recoverable_signature() {
+        let client = test_client();
+        let requirement = sample_requirement();
+
+        let sig = client.sign_payment(&requirement).await.unwrap();
+        let raw = hex::decode(&sig.payload).unwrap();
+        assert_eq!(raw.len(), 65);
+        let v = raw[64];
+        assert!(v == 27 || v == 28);
+    }
+
+    #[tokio::test]
+    async fn sign_payment_honors_custom_timeout() {
+        let client = test_client();
+        let mut requirement = sample_requirement();
+        requirement.max_timeout_seconds = Some(60);
+
+        let sig = client.sign_payment(&requirement).await.unwrap();
+        let auth = sig.authorization.unwrap();
+        let after: u64 = auth.valid_after.parse().unwrap();
+        let before: u64 = auth.valid_before.parse().unwrap();
+        assert_eq!(before - after, 60);
+    }
+
     // -- select_scheme tests --
 
     #[test]
@@ -468,6 +568,7 @@ mod tests {
                     amount: "100".into(),
                     recipient: "0xrecip".into(),
                     facilitator: "https://example.com".into(),
+                    max_timeout_seconds: None,
                 },
                 SchemeRequirement {
                     scheme: "exact".into(),
@@ -476,6 +577,7 @@ mod tests {
                     amount: "100".into(),
                     recipient: "0xrecip".into(),
                     facilitator: "https://example.com".into(),
+                    max_timeout_seconds: None,
                 },
             ],
             version: "v2".into(),
@@ -495,6 +597,7 @@ mod tests {
                 amount: "100".into(),
                 recipient: "SoLaNa".into(),
                 facilitator: "https://example.com".into(),
+                max_timeout_seconds: None,
             }],
             version: "v2".into(),
         };

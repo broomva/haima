@@ -19,11 +19,13 @@
 //!   -> Receive 200 + PAYMENT-RESPONSE header (settlement confirmation)
 //! ```
 
+pub mod bazaar;
 pub mod client;
 pub mod facilitator;
 pub mod header;
 pub mod server;
 
+pub use bazaar::{BazaarClient, BazaarClientBuilder, DEFAULT_BAZAAR_URL, ServiceEntry};
 pub use client::{HandleResult, SettlementResult, X402Client};
 pub use facilitator::{
     DEFAULT_FEE_BPS, FacilitateRequest, FacilitateResponse, FacilitationStatus, Facilitator,
@@ -31,9 +33,9 @@ pub use facilitator::{
     verify_payment_header,
 };
 pub use header::{
-    PAYMENT_REQUIRED_HEADER, PAYMENT_RESPONSE_HEADER, PAYMENT_SIGNATURE_HEADER,
-    PaymentRequiredHeader, PaymentResponseHeader, PaymentSignatureHeader, SchemeRequirement,
-    encode_payment_required, encode_payment_response, encode_payment_signature,
+    Eip3009Authorization, PAYMENT_REQUIRED_HEADER, PAYMENT_RESPONSE_HEADER,
+    PAYMENT_SIGNATURE_HEADER, PaymentRequiredHeader, PaymentResponseHeader, PaymentSignatureHeader,
+    SchemeRequirement, encode_payment_required, encode_payment_response, encode_payment_signature,
     parse_payment_required, parse_payment_response, parse_payment_signature,
 };
 pub use server::X402ServerMiddleware;

@@ -598,6 +598,7 @@ mod tests {
             scheme: "exact".into(),
             network: "eip155:8453".into(),
             payload: hex::encode([0xabu8; 64]),
+            authorization: None,
         };
         encode_payment_signature(&sig).unwrap()
     }
@@ -647,6 +648,7 @@ mod tests {
             scheme: "streaming".into(),
             network: "eip155:8453".into(),
             payload: hex::encode([0xabu8; 64]),
+            authorization: None,
         };
         let header = encode_payment_signature(&sig).unwrap();
 
@@ -668,6 +670,7 @@ mod tests {
             scheme: "exact".into(),
             network: "solana:mainnet".into(),
             payload: hex::encode([0xabu8; 64]),
+            authorization: None,
         };
         let header = encode_payment_signature(&sig).unwrap();
 
@@ -689,6 +692,7 @@ mod tests {
             scheme: "exact".into(),
             network: "eip155:8453".into(),
             payload: String::new(),
+            authorization: None,
         };
         let header = encode_payment_signature(&sig).unwrap();
 
@@ -710,6 +714,7 @@ mod tests {
             scheme: "exact".into(),
             network: "eip155:8453".into(),
             payload: hex::encode([0xabu8; 10]), // Too short
+            authorization: None,
         };
         let header = encode_payment_signature(&sig).unwrap();
 
@@ -732,6 +737,7 @@ mod tests {
             scheme: "exact".into(),
             network: "eip155:8453".into(),
             payload: "not-valid-hex!@#$".into(),
+            authorization: None,
         };
         let header = encode_payment_signature(&sig).unwrap();
 

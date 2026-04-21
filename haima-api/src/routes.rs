@@ -398,6 +398,7 @@ mod tests {
             scheme: "exact".into(),
             network: "eip155:8453".into(),
             payload: hex::encode([0xabu8; 64]),
+            authorization: None,
         };
         encode_payment_signature(&sig).unwrap()
     }
