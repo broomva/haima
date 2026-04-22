@@ -1,7 +1,7 @@
 # Haima — Agentic Finance Engine for the Agent OS
 
-**Version**: 0.1.0 | **Date**: 2026-03-19 | **Status**: Phase F0 COMPLETE (Foundation)
-**Tests**: 45 passing | 6 crates | Rust 2024 Edition (MSRV 1.85)
+**Version**: 0.1.0 | **Date**: 2026-04-21 | **Status**: Phase F1 IN PROGRESS (x402 real signing + discovery)
+**Tests**: 235 passing (haima-core 146, haima-wallet 23, haima-x402 61, e2e smoke 5) | 6 crates | Rust 2024 Edition (MSRV 1.85)
 
 Haima (αἷμα, Greek for "blood") is the circulatory system of the Agent OS —
 distributing economic resources (payments, revenue, credits) throughout the
@@ -18,9 +18,9 @@ cargo fmt && cargo clippy --workspace -- -D warnings && cargo test --workspace
 Rust 2024 | axum (HTTP API) | k256 (secp256k1) | x402 protocol | aios-protocol (canonical contract) | lago (event journal)
 
 ## Crates
-- `haima-core` (19 tests) — Types, traits, errors: payment schemes, receipts, wallets, policies, finance events
-- `haima-wallet` (7 tests) — secp256k1 keypair generation, EVM address derivation, ChaCha20-Poly1305 encrypted key storage, WalletBackend trait (local + MPC abstraction)
-- `haima-x402` (7 tests) — x402 protocol integration: client middleware (auto-pay on 402), server middleware (protect routes), facilitator client (Coinbase CDP / self-hosted)
+- `haima-core` (146 tests) — Types, traits, errors: payment schemes, receipts, wallets, policies, finance events. Includes `HaimaError::BazaarUnavailable` for discovery-layer failures.
+- `haima-wallet` (23 tests) — secp256k1 keypair generation, EVM address derivation, ChaCha20-Poly1305 encrypted key storage, WalletBackend trait (local + MPC abstraction), **EIP-712 typed-data hashing + EIP-3009 `transferWithAuthorization` signing** (`eip712.rs`, 12 tests validating Circle FiatTokenV2 type hashes + chain separation + ecrecover round-trip).
+- `haima-x402` (61 tests + 5 e2e smoke) — x402 protocol integration: client middleware with **real EIP-3009 signing** (`sign_payment` produces 65-byte recoverable signatures + structured `Eip3009Authorization`), server middleware scaffold, facilitator client (Coinbase CDP / self-hosted), **agentic.market bazaar discovery** (`bazaar.rs`, TTL cache, graceful degradation).
 - `haima-lago` (8 tests) — Lago bridge: finance event publishing, deterministic projection fold → FinancialState
 - `haima-api` (2 tests) — axum HTTP server: /health, /state endpoints
 - `haimad` (2 tests) — Daemon binary with CLI args, config, optional Lago journal
@@ -126,22 +126,23 @@ Autonomic consults Haima's events for:
 | Phase | Scope | Status |
 |-------|-------|--------|
 | **F0: Foundation** | Core types, wallet (k256), policy, events, API scaffold, projection fold | COMPLETE |
-| **F1: x402 Client** | x402-rs integration, header parsing, signing, facilitator settlement | PLANNED |
+| **F1: x402 Client + Discovery** | EIP-712 + EIP-3009 signing, real structured payload, agentic.market bazaar client, E2E smoke | IN PROGRESS (BRO-756 ✅ BRO-757 ✅ BRO-758 ✅) |
 | **F2: Ledger** | Wire to Lago EventStorePort, autonomic CostReason integration | PLANNED |
 | **F3: x402 Server** | Axum middleware, task billing, revenue collection | PLANNED |
 | **F4: Daemon** | Full haimad with Lago persistence, balance sync, transaction history | PLANNED |
 | **F5: Solana** | Solana chain support via x402-chain-solana | PLANNED |
 | **F6: MPP** | Stripe Machine Payments Protocol (when Rust SDK ships) | FUTURE |
 
-## Known Gaps (Post Phase F0)
+## Known Gaps (Post Phase F1 first pass)
 
-- x402 header parsing and signing stubbed (pending x402-rs integration in F1)
-- EIP-3009 transferWithAuthorization signing not implemented
-- Lago EventStorePort not wired (publisher logs only)
-- No arcan-haima bridge crate yet
+- x402 server middleware scaffolded but not axum-wired (F3)
+- Lago EventStorePort not wired (publisher logs only) (F2)
+- No arcan-haima bridge crate yet (F2)
 - No CLI commands (lago-cli style)
-- No on-chain balance query (requires RPC provider)
+- No on-chain balance query (requires RPC provider) (F4)
 - Identity not connected to Autonomic's EconomicIdentity
+- USDC EIP-712 domain only registered for Base mainnet + Base Sepolia; Ethereum mainnet + other L2s pending
+- Facilitator `verify_payment_header` still produces deterministic (not on-chain) tx hashes — real RPC integration in F4
 
 ## Rules
 - **Formatting**: `cargo fmt` before every commit
