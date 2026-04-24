@@ -1,9 +1,13 @@
-//! HTTP API DTOs for haimad — schema-only crate.
+//! HTTP API DTOs for haimad.
 //!
-//! This crate intentionally contains **no runtime code**. It exists so
-//! `life-kernel-facade` can depend on typed request/response shapes without
-//! pulling in haimad's server runtime. Types are filled in by Phase 0 tasks
-//! that mirror the canonical HTTP surface at
-//! `core/life/crates/haima/haimad/src/`.
+//! This crate is schema-only — no runtime code. It re-exports the canonical
+//! wire types from `aios-protocol::finance` so `life-kernel-facade` and other
+//! callers can depend on typed request/response shapes without pulling in the
+//! full `haimad` server runtime.
 
 #![forbid(unsafe_code)]
+
+pub use aios_protocol::finance::{
+    PaymentAuthRequest, PaymentAuthorization, SettlementReceipt, TimeWindow, TransactionFilter,
+    TransactionRecord, TransactionStatus, UsageReport, WalletManifest, WalletPolicy,
+};
