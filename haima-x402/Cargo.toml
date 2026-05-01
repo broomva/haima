@@ -11,6 +11,7 @@ description = "x402 protocol integration for Haima — client middleware, server
 [dependencies]
 haima-core.workspace = true
 haima-wallet.workspace = true
+anima-identity = { path = "../../anima/anima-identity", version = "0.3.0", optional = true }
 aios-protocol.workspace = true
 async-trait.workspace = true
 chrono.workspace = true
@@ -28,6 +29,13 @@ tokio = { workspace = true, features = ["sync", "time"] }
 [dev-dependencies]
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 wiremock = "0.6"
+
+[features]
+# Spec D D-Sub-A: optional adapter that lets `X402Client` consume an
+# `Arc<dyn AnimaCustody>` directly through a `WalletBackend` shim.
+# Off by default so existing `LocalSigner`-based callers don't pull
+# anima-identity into their dep graph unless they need it.
+custody-adapter = ["dep:anima-identity"]
 
 [lints]
 workspace = true

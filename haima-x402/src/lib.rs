@@ -21,12 +21,16 @@
 
 pub mod bazaar;
 pub mod client;
+#[cfg(feature = "custody-adapter")]
+pub mod custody_adapter;
 pub mod facilitator;
 pub mod header;
 pub mod server;
 
 pub use bazaar::{BazaarClient, BazaarClientBuilder, DEFAULT_BAZAAR_URL, ServiceEntry};
 pub use client::{HandleResult, SettlementResult, X402Client};
+#[cfg(feature = "custody-adapter")]
+pub use custody_adapter::CustodyWalletAdapter;
 pub use facilitator::{
     DEFAULT_FEE_BPS, FacilitateRequest, FacilitateResponse, FacilitationStatus, Facilitator,
     FacilitatorConfig, FacilitatorStats, FacilitatorStatsCounter, SettlementReceipt, calculate_fee,
