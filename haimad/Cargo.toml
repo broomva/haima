@@ -8,6 +8,14 @@ authors.workspace = true
 repository.workspace = true
 description = "Haima daemon — agentic finance engine for the Agent OS"
 
+[lib]
+name = "haimad"
+path = "src/lib.rs"
+
+[[bin]]
+name = "haimad"
+path = "src/main.rs"
+
 [dependencies]
 haima-core.workspace = true
 haima-wallet.workspace = true
@@ -15,19 +23,37 @@ haima-x402.workspace = true
 haima-lago.workspace = true
 haima-api.workspace = true
 haima-outcome.workspace = true
+haima-substrate-proto.workspace = true
 aios-protocol.workspace = true
+aios-proto.workspace = true
+async-trait.workspace = true
 axum.workspace = true
+chrono.workspace = true
+futures.workspace = true
+prost = "0.14"
+prost-types = "0.14"
 serde.workspace = true
 serde_json.workspace = true
+thiserror.workspace = true
+tonic = "0.14"
 tracing.workspace = true
 tracing-subscriber.workspace = true
 life-vigil.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tokio-stream.workspace = true
 tokio-util.workspace = true
 clap.workspace = true
 toml.workspace = true
 anyhow.workspace = true
+ulid.workspace = true
 life-paths.workspace = true
+
+[dev-dependencies]
+haima-proxy = { workspace = true }
+futures.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+tokio-stream.workspace = true
 
 [lints]
 workspace = true
