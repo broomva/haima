@@ -118,6 +118,13 @@ pub async fn pay_x402(
     //    network consistency, then the per-call max_amount cap. Parse the
     //    payment-required header once (handle_402 re-parses internally for
     //    the signing path).
+    //
+    // We inspect the FIRST `exact`/`eip155:` scheme — identical selection
+    // to `client::select_scheme`, so the scheme checked here is exactly the
+    // one that will be signed (no divergence). A 402 advertising multiple
+    // EVM schemes on different networks where only a *later* one matches
+    // `expected_network` would false-decline; that fails closed (toward
+    // not-paying) and cannot occur in P1 (single-network base-sepolia).
     if expected_network.is_some() || max_amount_micro_credits.is_some() {
         let header = parse_payment_required(&required)?;
         if let Some(scheme) = header
