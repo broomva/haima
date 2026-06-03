@@ -19,7 +19,11 @@ path = "src/main.rs"
 [dependencies]
 haima-core.workspace = true
 haima-wallet.workspace = true
-haima-x402.workspace = true
+# `custody-adapter` pulls `anima-identity` so the x402 substrate RPC can
+# sign EIP-3009 authorizations from the user's Anima-custodied wallet
+# (CustodyWalletAdapter). BRO-1354 (x402 transport, slice 2).
+haima-x402 = { workspace = true, features = ["custody-adapter"] }
+anima-identity = { path = "../../anima/anima-identity", version = "0.3.0" }
 haima-lago.workspace = true
 haima-api.workspace = true
 haima-outcome.workspace = true
@@ -32,8 +36,10 @@ chrono.workspace = true
 futures.workspace = true
 prost = "0.14"
 prost-types = "0.14"
+reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
+sha2.workspace = true
 thiserror.workspace = true
 tonic = "0.14"
 tracing.workspace = true
@@ -54,6 +60,7 @@ futures.workspace = true
 tempfile.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
 tokio-stream.workspace = true
+wiremock = "0.6"
 
 [lints]
 workspace = true
