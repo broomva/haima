@@ -22,8 +22,8 @@ use std::sync::Arc;
 
 use anima_identity::custody::{AnimaCustody, Eip712Domain};
 use async_trait::async_trait;
-use haima_core::{HaimaError, HaimaResult, WalletAddress};
-use haima_wallet::{USDC_BASE_MAINNET, USDC_BASE_SEPOLIA, WalletBackend};
+use haima_core::{ChainId, HaimaError, HaimaResult, WalletAddress};
+use haima_wallet::{WalletBackend, usdc_domain_for_chain};
 
 /// `WalletBackend` impl backed by an `Arc<dyn AnimaCustody>`.
 ///
@@ -33,6 +33,7 @@ use haima_wallet::{USDC_BASE_MAINNET, USDC_BASE_SEPOLIA, WalletBackend};
 pub struct CustodyWalletAdapter {
     custody: Arc<dyn AnimaCustody>,
     address: WalletAddress,
+    signing_chain: ChainId,
 }
 
 impl CustodyWalletAdapter {
@@ -47,7 +48,38 @@ impl CustodyWalletAdapter {
                     .to_string(),
             )
         })?;
-        Ok(Self { custody, address })
+        let signing_chain = address.chain.clone();
+        Ok(Self {
+            custody,
+            address,
+            signing_chain,
+        })
+    }
+
+    /// Construct a custody-backed wallet adapter that signs for an explicit
+    /// payment network.
+    ///
+    /// The custody backend's canonical [`WalletAddress`] may carry a different
+    /// CAIP-2 label than the payment network being signed. For EVM wallets this
+    /// is valid: the secp256k1 key controls the same 20-byte address on every
+    /// EVM chain, while the EIP-712 domain's `chainId` must match the payment
+    /// network being authorized.
+    pub fn from_custody_on_network(
+        custody: Arc<dyn AnimaCustody>,
+        network: ChainId,
+    ) -> HaimaResult<Self> {
+        let address = custody.wallet_address().cloned().ok_or_else(|| {
+            HaimaError::Crypto(
+                "custody backend did not resolve a wallet address (browser-only deployments \
+                     must pair with a server-side wallet backend)"
+                    .to_string(),
+            )
+        })?;
+        Ok(Self {
+            custody,
+            address,
+            signing_chain: network,
+        })
     }
 }
 
@@ -87,18 +119,9 @@ impl WalletBackend for CustodyWalletAdapter {
         valid_before: u64,
         nonce: &[u8; 32],
     ) -> HaimaResult<Vec<u8>> {
-        // Pick the USDC EIP-712 domain for the wallet's chain.
-        let domain = match self.address.chain.0.as_str() {
-            "eip155:8453" => USDC_BASE_MAINNET,
-            "eip155:84532" => USDC_BASE_SEPOLIA,
-            other => {
-                return Err(HaimaError::Crypto(format!(
-                    "no USDC EIP-712 domain registered for chain {other}"
-                )));
-            }
-        };
-        // The custody trait takes `&Eip712Domain` (re-exported from
-        // haima-wallet), so the cast is direct.
+        // Pick the USDC EIP-712 domain for the target payment network, which
+        // may differ from the custody wallet's canonical CAIP-2 label.
+        let domain = usdc_domain_for_chain(&self.signing_chain)?;
         let domain_ref: &Eip712Domain = &domain;
 
         let types = serde_json::json!({
@@ -137,6 +160,20 @@ impl WalletBackend for CustodyWalletAdapter {
 mod tests {
     use super::*;
     use anima_identity::InProcessAnima;
+    use haima_wallet::{
+        USDC_BASE_MAINNET, USDC_BASE_SEPOLIA, hash_transfer_authorization, parse_eth_address,
+    };
+    use k256::ecdsa::{RecoveryId, Signature as EcdsaSignature, VerifyingKey};
+    use sha3::{Digest, Keccak256};
+
+    fn recover_address(signature_bytes: &[u8], digest: &[u8; 32]) -> String {
+        let signature = EcdsaSignature::from_slice(&signature_bytes[..64]).unwrap();
+        let recid = RecoveryId::try_from(signature_bytes[64] - 27).unwrap();
+        let recovered = VerifyingKey::recover_from_prehash(digest, &signature, recid).unwrap();
+        let pubkey = recovered.to_encoded_point(false);
+        let hash = Keccak256::digest(&pubkey.as_bytes()[1..]);
+        format!("0x{}", hex::encode(&hash[12..]))
+    }
 
     #[tokio::test]
     async fn adapter_signs_eip3009_via_custody() {
@@ -154,6 +191,69 @@ mod tests {
         assert_eq!(sig.len(), 65);
         let v = sig[64];
         assert!(v == 27 || v == 28);
+    }
+
+    #[tokio::test]
+    async fn adapter_signs_base_sepolia_with_sepolia_domain() {
+        let custody = InProcessAnima::generate_dev().unwrap();
+        let sepolia_adapter =
+            CustodyWalletAdapter::from_custody_on_network(custody.clone(), ChainId::base_sepolia())
+                .unwrap();
+        let mainnet_adapter =
+            CustodyWalletAdapter::from_custody_on_network(custody.clone(), ChainId::base())
+                .unwrap();
+
+        let from = sepolia_adapter.address().address.clone();
+        let to = "0x036CbD53842c5426634e7929541eC2318f3dCF7e";
+        let nonce = [0x11u8; 32];
+        let value = 123u64;
+        let valid_after = 1_700_000_000u64;
+        let valid_before = 1_700_000_600u64;
+
+        let sepolia_sig = sepolia_adapter
+            .sign_transfer_authorization(&from, to, value, valid_after, valid_before, &nonce)
+            .await
+            .unwrap();
+        let mainnet_sig = mainnet_adapter
+            .sign_transfer_authorization(&from, to, value, valid_after, valid_before, &nonce)
+            .await
+            .unwrap();
+
+        assert_eq!(sepolia_sig.len(), 65);
+        assert!(matches!(sepolia_sig[64], 27 | 28));
+        assert_ne!(
+            sepolia_sig, mainnet_sig,
+            "different EIP-712 domains must produce different signatures"
+        );
+
+        let from_bytes = parse_eth_address(&from).unwrap();
+        let to_bytes = parse_eth_address(to).unwrap();
+        let sepolia_digest = hash_transfer_authorization(
+            &USDC_BASE_SEPOLIA,
+            &from_bytes,
+            &to_bytes,
+            value,
+            valid_after,
+            valid_before,
+            &nonce,
+        );
+        let mainnet_digest = hash_transfer_authorization(
+            &USDC_BASE_MAINNET,
+            &from_bytes,
+            &to_bytes,
+            value,
+            valid_after,
+            valid_before,
+            &nonce,
+        );
+
+        let recovered = recover_address(&sepolia_sig, &sepolia_digest);
+        assert_eq!(recovered.to_lowercase(), from.to_lowercase());
+        assert_ne!(
+            recover_address(&sepolia_sig, &mainnet_digest).to_lowercase(),
+            from.to_lowercase(),
+            "a sepolia-domain signature must not validate against the mainnet domain digest"
+        );
     }
 
     #[tokio::test]
