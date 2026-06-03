@@ -61,6 +61,15 @@ pub enum X402PayResult {
 
 /// Drive a full x402 client payment round-trip against `resource_url`.
 ///
+/// `expected_network`, when set (a CAIP-2 string like `eip155:84532`), is a
+/// per-call assertion enforced **before signing**: if the 402's advertised
+/// `exact`/EVM scheme names a different network, the payment is
+/// [`X402PayResult::Declined`] without signing. The EIP-712 authorization is
+/// already domain-bound to the wallet's signing network, so a cross-network
+/// signature would never settle anyway — this turns that silent dead-end into
+/// an explicit decline and stops a base-sepolia caller from being steered
+/// toward a mainnet-advertised payment by a hostile/misconfigured endpoint.
+///
 /// `max_amount_micro_credits`, when set, is a per-call ceiling enforced
 /// **before signing**, on top of the [`X402Client`]'s `PaymentPolicy`. An
 /// amount over the cap returns [`X402PayResult::Declined`] without signing or
@@ -73,6 +82,7 @@ pub async fn pay_x402(
     client: &X402Client,
     http: &reqwest::Client,
     resource_url: &str,
+    expected_network: Option<&str>,
     max_amount_micro_credits: Option<i64>,
 ) -> HaimaResult<X402PayResult> {
     // 1. Initial request.
@@ -104,25 +114,46 @@ pub async fn pay_x402(
         .map_err(|e| HaimaError::Protocol(format!("payment-required header not UTF-8: {e}")))?
         .to_string();
 
-    // 3. Enforce the per-call max_amount cap BEFORE signing.
-    if let Some(cap) = max_amount_micro_credits {
+    // 3. Pre-sign checks against the advertised `exact`/EVM scheme:
+    //    network consistency, then the per-call max_amount cap. Parse the
+    //    payment-required header once (handle_402 re-parses internally for
+    //    the signing path).
+    if expected_network.is_some() || max_amount_micro_credits.is_some() {
         let header = parse_payment_required(&required)?;
         if let Some(scheme) = header
             .schemes
             .iter()
             .find(|s| s.scheme == "exact" && s.network.starts_with("eip155:"))
         {
-            let raw: u64 = scheme.amount.parse().map_err(|e| {
-                HaimaError::Protocol(format!("invalid amount '{}': {e}", scheme.amount))
-            })?;
-            let micro_credits = usdc_raw_to_micro_credits(raw);
-            if micro_credits > cap {
+            // 3a. Network consistency. The wallet will sign for its own
+            //     signing network; reject a 402 advertising a different one
+            //     rather than producing a signature that can never settle.
+            if let Some(expected) = expected_network
+                && scheme.network != expected
+            {
                 return Ok(X402PayResult::Declined {
                     reason: format!(
-                        "amount {micro_credits} micro-credits exceeds max_amount {cap}"
+                        "network mismatch: 402 advertised '{}', expected '{expected}'",
+                        scheme.network
                     ),
-                    micro_credits,
+                    micro_credits: 0,
                 });
+            }
+
+            // 3b. max_amount cap.
+            if let Some(cap) = max_amount_micro_credits {
+                let raw: u64 = scheme.amount.parse().map_err(|e| {
+                    HaimaError::Protocol(format!("invalid amount '{}': {e}", scheme.amount))
+                })?;
+                let micro_credits = usdc_raw_to_micro_credits(raw);
+                if micro_credits > cap {
+                    return Ok(X402PayResult::Declined {
+                        reason: format!(
+                            "amount {micro_credits} micro-credits exceeds max_amount {cap}"
+                        ),
+                        micro_credits,
+                    });
+                }
             }
         }
     }
@@ -271,7 +302,9 @@ mod tests {
         let http = reqwest::Client::new();
         let url = format!("{}/api/data", server.uri());
 
-        let result = pay_x402(&client, &http, &url, None).await.expect("pay");
+        let result = pay_x402(&client, &http, &url, None, None)
+            .await
+            .expect("pay");
         match result {
             X402PayResult::Paid(o) => {
                 assert!(o.settled);
@@ -297,7 +330,9 @@ mod tests {
         let http = reqwest::Client::new();
         let url = format!("{}/api/data", server.uri());
 
-        let result = pay_x402(&client, &http, &url, Some(10)).await.expect("pay");
+        let result = pay_x402(&client, &http, &url, None, Some(10))
+            .await
+            .expect("pay");
         match result {
             X402PayResult::Declined {
                 micro_credits,
@@ -320,7 +355,9 @@ mod tests {
         let http = reqwest::Client::new();
         let url = format!("{}/api/data", server.uri());
 
-        let result = pay_x402(&client, &http, &url, None).await.expect("pay");
+        let result = pay_x402(&client, &http, &url, None, None)
+            .await
+            .expect("pay");
         assert!(
             matches!(result, X402PayResult::Declined { .. }),
             "over-hard-cap amount must decline, got {result:?}"
@@ -340,7 +377,9 @@ mod tests {
         let http = reqwest::Client::new();
         let url = format!("{}/api/data", server.uri());
 
-        let result = pay_x402(&client, &http, &url, None).await.expect("pay");
+        let result = pay_x402(&client, &http, &url, None, None)
+            .await
+            .expect("pay");
         match result {
             X402PayResult::NotRequired {
                 status,
@@ -351,5 +390,56 @@ mod tests {
             }
             other => panic!("expected NotRequired, got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn network_mismatch_declines_before_signing() {
+        let server = MockServer::start().await;
+        // The 402 advertises eip155:8453 (mainnet). Only the 402 leg is
+        // mounted — if pay_x402 signed + retried, the request would 404.
+        // Getting Declined proves the network check short-circuited before
+        // signing.
+        mount_402(&server, "50").await;
+
+        let client = make_client();
+        let http = reqwest::Client::new();
+        let url = format!("{}/api/data", server.uri());
+
+        // Caller expects base-sepolia (eip155:84532) — mismatch.
+        let result = pay_x402(&client, &http, &url, Some("eip155:84532"), None)
+            .await
+            .expect("pay");
+        match result {
+            X402PayResult::Declined {
+                reason,
+                micro_credits,
+            } => {
+                assert!(reason.contains("network mismatch"), "reason: {reason}");
+                assert!(reason.contains("eip155:8453"));
+                assert!(reason.contains("eip155:84532"));
+                assert_eq!(micro_credits, 0);
+            }
+            other => panic!("expected Declined, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn matching_network_still_settles() {
+        let server = MockServer::start().await;
+        mount_402(&server, "50").await; // eip155:8453
+        mount_paid(&server).await;
+
+        let client = make_client();
+        let http = reqwest::Client::new();
+        let url = format!("{}/api/data", server.uri());
+
+        // Expected network matches the advertised one → no decline.
+        let result = pay_x402(&client, &http, &url, Some("eip155:8453"), None)
+            .await
+            .expect("pay");
+        assert!(
+            matches!(result, X402PayResult::Paid(_)),
+            "matching network must settle, got {result:?}"
+        );
     }
 }

@@ -294,6 +294,10 @@ impl WalletSubstrate for SubstrateService {
 
         // Resolve the signing network. P1 = base-sepolia only.
         let network = resolve_network(&body.network)?;
+        // Capture the CAIP-2 string before `network` is moved into the
+        // adapter — pay_x402 declines a 402 that advertises a different
+        // network than the one we will sign for (BRO-1368).
+        let network_caip2 = network.0.clone();
 
         // Resolve the user's custody backend and wrap it so x402 signs
         // EIP-3009 authorizations from the user's wallet half.
@@ -312,9 +316,15 @@ impl WalletSubstrate for SubstrateService {
         );
         let http = reqwest::Client::new();
 
-        let result = pay_x402(&client, &http, &body.resource_url, body.max_amount_micros)
-            .await
-            .map_err(map_haima_error)?;
+        let result = pay_x402(
+            &client,
+            &http,
+            &body.resource_url,
+            Some(network_caip2.as_str()),
+            body.max_amount_micros,
+        )
+        .await
+        .map_err(map_haima_error)?;
 
         Ok(Response::new(map_pay_result(result)))
     }
@@ -526,6 +536,48 @@ mod x402_tests {
         assert_eq!(resp.micro_credits, 50);
         assert_eq!(resp.resource_body, b"{\"ok\":true}");
         assert_eq!(resp.resource_status, 200);
+    }
+
+    #[tokio::test]
+    async fn x402_pay_declines_on_network_mismatch() {
+        // The 402 advertises mainnet (eip155:8453) but the handler resolves
+        // base-sepolia → pay_x402 declines before signing (BRO-1368). Only
+        // the 402 leg is mounted; a decline proves no signed retry happened.
+        let server = MockServer::start().await;
+        let header = PaymentRequiredHeader {
+            schemes: vec![SchemeRequirement {
+                scheme: "exact".into(),
+                network: "eip155:8453".into(), // mainnet — mismatch vs base-sepolia
+                token: USDC_BASE_SEPOLIA_ADDR.into(),
+                amount: "50".into(),
+                recipient: TEST_RECIPIENT.into(),
+                facilitator: "https://x402.org/facilitator".into(),
+                max_timeout_seconds: Some(300),
+            }],
+            version: "v2".into(),
+        };
+        Mock::given(method("GET"))
+            .and(path("/api/data"))
+            .respond_with(ResponseTemplate::new(402).insert_header(
+                PAYMENT_REQUIRED_HEADER,
+                encode_payment_required(&header).expect("encode"),
+            ))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+
+        let resp = service()
+            .x402_pay(Request::new(req(&server.uri(), "base-sepolia", None)))
+            .await
+            .expect("x402_pay")
+            .into_inner();
+
+        assert_eq!(resp.status, "declined");
+        assert!(
+            resp.declined_reason.contains("network mismatch"),
+            "reason: {}",
+            resp.declined_reason
+        );
     }
 
     #[tokio::test]
