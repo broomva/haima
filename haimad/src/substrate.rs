@@ -679,4 +679,64 @@ mod x402_tests {
             tonic::Code::InvalidArgument
         );
     }
+
+    /// Live base-sepolia x402 round-trip through the real `X402Pay`
+    /// handler (BRO-1365). `#[ignore]` because it needs a funded wallet
+    /// (`print_live_wallet_address` → CDP faucet) + a running x402 seller
+    /// at `X402_LIVE_RESOURCE_URL` that settles the EIP-3009 authorization
+    /// on-chain. Drives the EXACT handler: resolve custody → wrap in
+    /// CustodyWalletAdapter → X402Client → pay_x402. Asserts the payment
+    /// settled and prints the on-chain settlement tx hash.
+    ///
+    /// Run: `X402_LIVE_RESOURCE_URL=http://127.0.0.1:8402/paid \
+    ///       cargo test -p haimad live_base_sepolia_roundtrip -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore = "live: needs a funded wallet + a running x402 seller (BRO-1365)"]
+    async fn live_base_sepolia_roundtrip() {
+        let url = std::env::var("X402_LIVE_RESOURCE_URL")
+            .expect("set X402_LIVE_RESOURCE_URL to the running x402 seller");
+        let user = std::env::var("X402_LIVE_USER").unwrap_or_else(|_| "x402-live".into());
+        let project = std::env::var("X402_LIVE_PROJECT").unwrap_or_else(|_| "base-sepolia".into());
+        let resp = service()
+            .x402_pay(Request::new(haima_pb::X402PayReq {
+                user_id: user,
+                project_id: project,
+                resource_url: url,
+                network: "base-sepolia".into(),
+                max_amount_micros: Some(100),
+            }))
+            .await
+            .expect("x402_pay handler errored")
+            .into_inner();
+        println!("LIVE_X402_STATUS={}", resp.status);
+        println!("LIVE_X402_TX={}", resp.tx_hash);
+        println!("LIVE_X402_NETWORK={}", resp.network);
+        println!("LIVE_X402_RECIPIENT={}", resp.recipient);
+        println!("LIVE_X402_MICRO_CREDITS={}", resp.micro_credits);
+        println!("LIVE_X402_DECLINED_REASON={}", resp.declined_reason);
+        assert_eq!(
+            resp.status, "settled",
+            "expected settled; declined_reason={}",
+            resp.declined_reason
+        );
+        assert!(resp.settled, "facilitator did not report settled");
+        assert!(!resp.tx_hash.is_empty(), "no settlement tx hash returned");
+    }
+
+    /// Prints the deterministic x402 signing wallet address the rail
+    /// resolves for `(X402_LIVE_USER, X402_LIVE_PROJECT)`. Used by the
+    /// BRO-1365 live base-sepolia round-trip to know which address to
+    /// fund via the CDP faucet. Not an assertion — run with
+    /// `--ignored --nocapture`.
+    #[test]
+    #[ignore = "utility: prints the live wallet address to fund (BRO-1365)"]
+    fn print_live_wallet_address() {
+        let user = std::env::var("X402_LIVE_USER").unwrap_or_else(|_| "x402-live".into());
+        let project = std::env::var("X402_LIVE_PROJECT").unwrap_or_else(|_| "base-sepolia".into());
+        let custody = InProcessAnima::from_seed_arc(derive_custody_seed(&user, &project)).unwrap();
+        println!(
+            "X402_LIVE_WALLET_ADDRESS={}",
+            custody.wallet_address().unwrap().address
+        );
+    }
 }
