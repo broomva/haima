@@ -25,6 +25,7 @@ pub mod client;
 pub mod custody_adapter;
 pub mod facilitator;
 pub mod header;
+pub mod pay;
 pub mod server;
 
 pub use bazaar::{BazaarClient, BazaarClientBuilder, DEFAULT_BAZAAR_URL, ServiceEntry};
@@ -42,4 +43,5 @@ pub use header::{
     SchemeRequirement, encode_payment_required, encode_payment_response, encode_payment_signature,
     parse_payment_required, parse_payment_response, parse_payment_signature,
 };
+pub use pay::{X402PaidOutcome, X402PayResult, pay_x402};
 pub use server::X402ServerMiddleware;
