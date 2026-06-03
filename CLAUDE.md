@@ -23,7 +23,7 @@ Rust 2024 | axum (HTTP API) | k256 (secp256k1) | x402 protocol | aios-protocol (
 - `haima-x402` (61 tests + 5 e2e smoke) — x402 protocol integration: client middleware with **real EIP-3009 signing** (`sign_payment` produces 65-byte recoverable signatures + structured `Eip3009Authorization`), server middleware scaffold, facilitator client (Coinbase CDP / self-hosted), **agentic.market bazaar discovery** (`bazaar.rs`, TTL cache, graceful degradation).
 - `haima-lago` (8 tests) — Lago bridge: finance event publishing, deterministic projection fold → FinancialState
 - `haima-api` (2 tests) — axum HTTP server: /health, /state endpoints
-- `haimad` (2 tests) — Daemon binary with CLI args, config, optional Lago journal
+- `haimad` (14 lib tests) — Daemon binary with CLI args, config, optional Lago journal. Also serves the substrate-plane `haima.v1.WalletSubstrate` gRPC (`--uds-socket`): bind/unbind/balance/statement/debit/transfer **+ `X402Pay`** (BRO-1354) — resolves the user's custody (P1: deterministic per-`(user,project)` `InProcessAnima`; slice 2b → `SomaCustody`), wraps it in `CustodyWalletAdapter`, and drives `pay_x402`. **base-sepolia only** (`network="base"` → `failed_precondition`).
 
 ## Running
 
